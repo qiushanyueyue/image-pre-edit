@@ -1,0 +1,8 @@
+INFO:     Will watch for changes in these directories: ['/Users/qiushanyueyue/Documents/GitHub/图片预处理/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8011 (Press CTRL+C to quit)
+INFO:     Started reloader process [23769] using WatchFiles
+INFO:     Started server process [23838]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Ollama error: HTTPConnectionPool(host='192.168.31.50', port=11434): Read timed out. (read timeout=30)
+INFO:     127.0.0.1:50284 - "POST /api/ai-analyze HTTP/1.1" 200 OK

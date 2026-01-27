@@ -1,0 +1,25 @@
+# System
+.DS_Store
+
+# Environments
+.env
+.env.local
+
+# Dependencies
+node_modules/
+backend/venv/
+backend/__pycache__/
+__pycache__/
+
+# Vercel
+.vercel/
+dist/
+build/
+
+# Uploads
+frontend/public/uploads/
+uploads/
+
+# IDE
+.vscode/
+.idea/

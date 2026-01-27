@@ -1,0 +1,7 @@
+# Vercel 部署配置
+.vercel
+*.log
+node_modules/
+__pycache__/
+.env
+.DS_Store
