@@ -6,8 +6,8 @@
     "framework": null,
     "rewrites": [
         {
-            "source": "/api/:path*",
-            "destination": "/api/index"
+            "source": "/api/(.*)",
+            "destination": "/api/index.py"
         },
         {
             "source": "/(.*)",
@@ -18,8 +18,5 @@
         "api/index.py": {
             "runtime": "python3.9"
         }
-    },
-    "env": {
-        "GEMINI_API_KEY": "@gemini_api_key"
     }
 }

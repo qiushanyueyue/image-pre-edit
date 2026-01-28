@@ -1,6 +1,9 @@
 # 🎨 AI Image Pre-Editor & Prompt Refiner
 
-[![Vercel](https://therealsujitk-vercel-badge.vercel.app/?app=image-pre-edit)](https://vercel.com/new/clone?repository-url=https://github.com/qiushanyueyue/image-pre-edit)
+[![Vercel Deployment](https://deploy-badge.vercel.app/project/image-pre-edit?style=flat-square)](https://image-pre-edit.vercel.app)
+
+[🔥 Live Demo (Custom Domain)](https://image.108923.xyz/) | [Generic Domain](https://image-pre-edit.vercel.app/)
+
 
 An intelligent workspace for image pre-processing, analysis, and AI prompt engineering. Optimized for Stable Diffusion, Midjourney, and LoRA training workflows.
 
