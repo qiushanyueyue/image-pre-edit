@@ -6,10 +6,27 @@ import os
 from dotenv import load_dotenv
 import re
 import base64
-from openai import AsyncOpenAI
+import json
 
 # Load environment variables
 load_dotenv()
+
+# Custom Qwen-VL Client Configuration
+import os
+from openai import AsyncOpenAI
+
+# Endpoint and Key should be set in .env or Vercel Environment Variables
+qwen_api_key = os.getenv("QWEN_VL_API_KEY", "ollama")
+qwen_endpoint = os.getenv("QWEN_VL_ENDPOINT", "http://yytianjin.yyboxdns.com:12524/v1") # Default fallback for local
+
+if not qwen_endpoint:
+    print("Warning: QWEN_VL_ENDPOINT not set. AI features may fail.")
+
+client = AsyncOpenAI(
+    api_key=qwen_api_key,
+    base_url=qwen_endpoint
+)
+MODEL_NAME = "qwen3-vl:235b-cloud"
 
 app = FastAPI()
 
@@ -21,24 +38,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Custom Qwen-VL Client Configuration
-# Endpoint and Key should be set in .env or Vercel Environment Variables
-qwen_api_key = os.getenv("QWEN_VL_API_KEY", "ollama")
-qwen_endpoint = os.getenv("QWEN_VL_ENDPOINT")
-
-if not qwen_endpoint:
-    print("Warning: QWEN_VL_ENDPOINT not set. AI features may fail.")
-
-client = AsyncOpenAI(
-    api_key=qwen_api_key,
-    base_url=qwen_endpoint
-)
-MODEL_NAME = "qwen3-vl:235b-cloud"
-
-class PromptRequest(BaseModel):
-    image: str
-    user_request: str = ""
 
 @app.get("/")
 def read_root():
@@ -53,30 +52,29 @@ async def ai_analyze(
     try:
         print(f"Received request: {user_request}, mode: {mode}")
         
-        # Read and encode image to Base64
+        # Read image content
         image_content = await image.read()
         base64_image = base64.b64encode(image_content).decode('utf-8')
-        image_url = f"data:image/jpeg;base64,{base64_image}" # Assuming jpeg/png generic header works
+        image_url = f"data:image/jpeg;base64,{base64_image}"
 
         # Get actual image dimensions using PIL
         import io
         from PIL import Image
         pil_img = Image.open(io.BytesIO(image_content))
         img_width, img_height = pil_img.size
-
+        
         # Step 1: Visual Analysis (Using Qwen-VL)
         print("Step 1: Analyzing image with Qwen-VL...")
         
-        step1_prompt = """
-请详细分析这张图片。
-你需要识别画面中的主体、环境、光影、构图、视角、材质和细节特征。
-请以JSON格式输出分析结果，包含以下字段：
-- 图片尺寸 (Image Size): 自动读取 (请保留此字段)
-- 场景基础 (Scene Basics): 天气, 时间, 光照, 视角
-- 主体特征 (Subject Features): 建筑/物体形态, 材质, 颜色, 结构
-- 视觉色彩 (Visual Colors): 主色调 (Dominant Colors), 配色方案 (Color Scheme)
-- 环境细节 (Environment Details): 配景, 植被, 道路, 天空
-- 风格氛围 (Style & Mood): 整体风格, 氛围感, 艺术参考
+        # Simplified prompt as per user request
+        step1_prompt = f"""
+分析这张图片。
+输出一段简单的纯文本分析，包含以下信息：
+1. 图片尺寸 (Image Size): {img_width}x{img_height} (已自动读取)
+2. 视觉色彩 (Visual Colors): 主色调、配色方案
+3. 详细画面描述 (Detailed Description): 主体、环境、光影、风格
+
+不需要严格的JSON格式，清晰列出即可。
 """
         
         response1 = await client.chat.completions.create(
@@ -102,11 +100,6 @@ async def ai_analyze(
             cleaned_json = re.sub(r'```json\n', '', analysis_result)
             cleaned_json = re.sub(r'```', '', cleaned_json).strip()
             
-            # Inject actual dimensions if possible (simple string manipulation or JSON parsing)
-            # Since generating valid JSON is hard to guarantee, we'll just prepend it textually if it's not a valid object,
-            # or try to insert it if it looks like JSON.
-            # Simple approach: Return a new JSON string combining real data + AI data
-            
             return {
                 "result": f"""{{
   "图片物理尺寸": "{img_width}x{img_height}",
@@ -115,29 +108,30 @@ async def ai_analyze(
             }
 
         # Step 2: Prompt Generation
-        print("Step 2: Generating final prompt...")
+        print("Step 2: Generating final prompt with strict adherence...")
         
         if not user_request:
             user_request = "保持原图风格，优化细节质感"
 
-        # Simplified System Prompt from User
+        # STRICT SYSTEM PROMPT (Migrated from Gemini)
         system_prompt = f"""# Role: 高级 AI 视觉架构师与提示词工程专家
 
 ## Core Mission:
-你是一个专门为 NanoBanana (Gemini/Qwen 生图) 打造的提示词转换引擎。你的任务是接收“一张参考图”和“一段用户大白话”，通过后台逻辑建模，输出一段工业级、高精度的中文生图提示词。
+你是一个专门为 NanoBanana (Gemini 生图) 打造的提示词转换引擎。你的任务是接收“一张参考图”和“一段用户大白话”，通过后台逻辑建模，输出一段工业级、高精度的中文生图提示词。
 
-基于上一步的【视觉分析】以及用户的【大白话需求】，生成最终的生图提示词。
+基于上一步的【视觉分析】以及用户的【提示词要求】，生成最终的生图提示词。
 
-## 用户大白话需求:
+## 用户提示词要求 (Highest Priority):
 {user_request}
 
-## 视觉分析结果:
+## 视觉分析结果 (Context):
 {analysis_result}
 
-## Output Requirements:
-1. 必须是纯文本，不要包含 Markdown 代码块标记 (如 ```json 或 ```)。
-2. 只输出最终的中文提示词内容，不要任何解释或前缀。
-3. 必须严格遵循用户的【提示词要求】，将这些要求仅次于核心视觉还原进行融入。同时，必须保持除用户要求修改外的其余画面元素（如环境、风格、非修改主体）与原图高度统一。
+## Output Requirements (Strict):
+1. **最高优先级**：必须**无条件、严格遵守**用户的【提示词要求】。如果用户要求修改画面（如“变成晚上”、“改成红色”），必须完全执行，并忽略视觉分析中冲突的部分。
+2. **需求细化**：不仅仅是照搬用户的要求，必须对其进行**专业细化和扩展**。例如用户说“要科幻感”，你必须扩展为“赛博朋克风格、霓虹灯效、金属质感、未来建筑结构”等具体描述。
+3. **元素统一**：在满足用户要求的前提下，保持其余非修改元素（构图、未提及的物体、基础材质）与原图【视觉分析结果】高度统一。
+4. **格式规范**：必须是纯文本，不要包含 Markdown 代码块标记（如 ```json），不要包含任何解释、前缀或废话。只输出最终的 prompt 内容。
 """
 
         response2 = await client.chat.completions.create(
@@ -148,28 +142,19 @@ async def ai_analyze(
             ],
             max_tokens=2048
         )
-
-        final_result = response2.choices[0].message.content
         
-        # Post-processing to clean up output (just in case)
-        # Remove ```json ... ``` or ``` ... ```
+        final_result = response2.choices[0].message.content
         final_result = re.sub(r'```[a-zA-Z]*\n', '', final_result)
         final_result = re.sub(r'```', '', final_result)
-        
-        # Remove internal thought process/json objects if they leaked, matching balanced braces would be better but simple strict regex for common cases:
-        # Match {"...": ...} roughly if it appears at start
         final_result = re.sub(r'^\s*\{.*?\}\s*', '', final_result, flags=re.DOTALL) 
-        
-        print(f"Final Result: {final_result[:100]}...")
         
         return {"result": final_result.strip()}
 
     except Exception as e:
-        print(f"API Error: {str(e)}")
-        # Return the specific error message to the frontend
+        print(f"Gemini API Error: {str(e)}")
         raise HTTPException(
             status_code=500, 
-            detail=f"API调用失败: {str(e)}"
+            detail=f"Gemini API错误: {str(e)}"
         )
 
 if __name__ == "__main__":
