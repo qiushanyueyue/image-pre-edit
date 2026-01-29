@@ -97,6 +97,17 @@ async def generate_with_retry(prompt_parts, retries=5, default_delay=5):
 def health_check():
     return {"status": "ok", "model": MODEL_NAME, "api_key_set": bool(GEMINI_API_KEY)}
 
+@app.get("/api/debug-env")
+def debug_env():
+    import pkg_resources
+    installed_packages = [(d.project_name, d.version) for d in pkg_resources.working_set]
+    return {
+        "status": "ok",
+        "python_version": sys.version,
+        "packages": installed_packages,
+        "env_vars": [k for k in os.environ.keys() if "GEMINI" in k or "VERCEL" in k] 
+    }
+
 @app.get("/")
 def read_root():
     return {"Hello": "World from Vercel"}
