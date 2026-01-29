@@ -74,10 +74,11 @@ export const RightPanel: React.FC = () => {
 
             console.log(`正在调用 AI API (${mode})...`);
 
-            // Dynamic API URL handling
             const apiUrl = import.meta.env.VITE_API_URL
                 ? `${import.meta.env.VITE_API_URL}/api/ai-analyze`
                 : '/api/ai-analyze';
+
+            console.log(`Sending request to: ${apiUrl}`);
 
             const res = await fetch(apiUrl, {
                 method: 'POST',
@@ -87,7 +88,7 @@ export const RightPanel: React.FC = () => {
             if (!res.ok) {
                 const errorText = await res.text();
                 console.error('API错误响应:', errorText);
-                throw new Error(`API错误: ${res.status} ${res.statusText}`);
+                throw new Error(`API错误: ${res.status} ${res.statusText} - ${errorText.slice(0, 50)}`);
             }
 
             const data = await res.json();
@@ -100,9 +101,10 @@ export const RightPanel: React.FC = () => {
                 setJsonResult(typeof data === 'string' ? data : JSON.stringify(data, null, 2));
             }
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('AI分析失败:', error);
-            alert(`❌ AI分析失败: ${error}\n\n请确保:\n1. 后端服务运行在 http://localhost:8011\n2. Qwen-VL API 可用`);
+            const msg = error.message || String(error);
+            alert(`❌ AI分析失败: ${msg}\n\n如有问题，请检查网络或稍后重试。`);
         } finally {
             setAnalyzingMode(null);
         }
@@ -118,7 +120,8 @@ export const RightPanel: React.FC = () => {
                 </h3>
 
                 {/* Upload button */}
-                <label
+                {/* Upload button */}
+                <div
                     className={clsx(
                         "flex flex-col items-center justify-center w-full h-16 border-2 border-dashed rounded-xl cursor-pointer transition-all mb-2",
                         isDragOver ? "border-blue-500 bg-blue-50" : "border-slate-300 hover:border-blue-500 hover:bg-blue-50"
@@ -127,19 +130,21 @@ export const RightPanel: React.FC = () => {
                     onDragEnter={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
+                    onClick={() => document.getElementById('sticker-upload-input')?.click()}
                 >
-                    <div className="flex flex-col items-center justify-center">
+                    <div className="flex flex-col items-center justify-center pointer-events-none">
                         <Upload className="w-6 h-6 text-slate-400 mb-1" />
                         <p className="text-xs text-slate-500">拖拽Or点击上传</p>
                     </div>
                     <input
+                        id="sticker-upload-input"
                         type="file"
                         multiple
                         className="hidden"
                         onChange={handleUpload}
                         accept="image/*"
                     />
-                </label>
+                </div>
 
                 {/* Overlay list */}
                 {overlays.length > 0 && (
@@ -231,6 +236,8 @@ export const RightPanel: React.FC = () => {
                     <p className="text-xs opacity-50">输入需求并点击生成</p>
                 </div>
             )}
+
+            {/* Debug Log Section - Removed for Production */}
         </div>
     );
 };

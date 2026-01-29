@@ -1,32 +1,33 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import uvicorn
 import os
 from dotenv import load_dotenv
 import re
 import base64
 import json
+import google.generativeai as genai
+from PIL import Image
+import io
 
 # Load environment variables
 load_dotenv()
 
-# Custom Qwen-VL Client Configuration
-import os
-from openai import AsyncOpenAI
+# Google Gemini Configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    print("Warning: GEMINI_API_KEY not set in .env")
 
-# Endpoint and Key should be set in .env or Vercel Environment Variables
-qwen_api_key = os.getenv("QWEN_VL_API_KEY", "ollama")
-qwen_endpoint = os.getenv("QWEN_VL_ENDPOINT", "http://yytianjin.yyboxdns.com:12524/v1") # Default fallback for local
+genai.configure(api_key=GEMINI_API_KEY)
 
-if not qwen_endpoint:
-    print("Warning: QWEN_VL_ENDPOINT not set. AI features may fail.")
+import asyncio
+from google.api_core import exceptions
 
-client = AsyncOpenAI(
-    api_key=qwen_api_key,
-    base_url=qwen_endpoint
-)
-MODEL_NAME = "qwen3-vl:235b-cloud"
+# ...
+
+# Use Gemini Flash Latest (Likely 1.5 Flash which has better Free Tier)
+MODEL_NAME = "gemini-flash-latest"
+model = genai.GenerativeModel(MODEL_NAME)
 
 app = FastAPI()
 
@@ -38,6 +39,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+async def generate_with_retry(prompt_parts, retries=5, default_delay=5):
+    """
+    Helper function to generate content with smart retry logic for 429 errors.
+    """
+    for i in range(retries):
+        try:
+            return await model.generate_content_async(prompt_parts)
+        except Exception as e:
+            error_str = str(e)
+            is_rate_limit = isinstance(e, exceptions.ResourceExhausted) or "429" in error_str
+            
+            if is_rate_limit:
+                if i == retries - 1:
+                    print(f"Rate limit hit. Max retries ({retries}) exceeded.")
+                    raise e
+                
+                # Smart delay: Try to parse "retry_delay { seconds: X }"
+                wait_time = default_delay * (2 ** i) # Default backoff
+                
+                # Regex to find "retry_delay { seconds: 35 }" or similar
+                match = re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+(\.\d+)?)', error_str)
+                if match:
+                    parsed_delay = float(match.group(1))
+                    wait_time = parsed_delay + 1.0 # Add 1s buffer
+                    print(f"Found explicit retry delay in error: {wait_time}s")
+                
+                print(f"Rate limit hit (429). Retrying in {wait_time:.2f}s... (Attempt {i+1}/{retries})")
+                await asyncio.sleep(wait_time)
+            else:
+                raise e
 
 @app.get("/")
 def read_root():
@@ -54,19 +86,12 @@ async def ai_analyze(
         
         # Read image content
         image_content = await image.read()
-        base64_image = base64.b64encode(image_content).decode('utf-8')
-        image_url = f"data:image/jpeg;base64,{base64_image}"
-
-        # Get actual image dimensions using PIL
-        import io
-        from PIL import Image
         pil_img = Image.open(io.BytesIO(image_content))
         img_width, img_height = pil_img.size
         
-        # Step 1: Visual Analysis (Using Qwen-VL)
-        print("Step 1: Analyzing image with Qwen-VL...")
+        # Step 1: Visual Analysis
+        print(f"Step 1: Analyzing image with {MODEL_NAME}...")
         
-        # Simplified prompt as per user request
         step1_prompt = f"""
 分析这张图片。
 输出一段简单的纯文本分析，包含以下信息：
@@ -77,33 +102,19 @@ async def ai_analyze(
 不需要严格的JSON格式，清晰列出即可。
 """
         
-        response1 = await client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": step1_prompt},
-                        {"type": "image_url", "image_url": {"url": image_url}}
-                    ]
-                }
-            ],
-            max_tokens=2048
-        )
-        
-        analysis_result = response1.choices[0].message.content
+        # USE RETRY HELPER
+        response1 = await generate_with_retry([step1_prompt, pil_img])
+        analysis_result = response1.text
         print(f"Analysis Result: {analysis_result[:100]}...")
 
         # If mode is JSON, return the analysis result directly
         if mode == "json":
-            # Remove Markdown code blocks if present
             cleaned_json = re.sub(r'```json\n', '', analysis_result)
             cleaned_json = re.sub(r'```', '', cleaned_json).strip()
-            
             return {
                 "result": f"""{{
   "图片物理尺寸": "{img_width}x{img_height}",
-  "AI分析内容": {cleaned_json if cleaned_json.startswith('{') else f'"{cleaned_json}"'}
+  "AI分析内容": {json.dumps(cleaned_json, ensure_ascii=False)}
 }}"""
             }
 
@@ -113,7 +124,6 @@ async def ai_analyze(
         if not user_request:
             user_request = "保持原图风格，优化细节质感"
 
-        # STRICT SYSTEM PROMPT (Migrated from Gemini)
         system_prompt = f"""# Role: 高级 AI 视觉架构师与提示词工程专家
 
 ## Core Mission:
@@ -134,28 +144,29 @@ async def ai_analyze(
 4. **格式规范**：必须是纯文本，不要包含 Markdown 代码块标记（如 ```json），不要包含任何解释、前缀或废话。只输出最终的 prompt 内容。
 """
 
-        response2 = await client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "请开始生成。"}
-            ],
-            max_tokens=2048
-        )
+        # USE RETRY HELPER
+        response2 = await generate_with_retry(system_prompt)
+        final_result = response2.text
         
-        final_result = response2.choices[0].message.content
+        # Clean up output
         final_result = re.sub(r'```[a-zA-Z]*\n', '', final_result)
         final_result = re.sub(r'```', '', final_result)
-        final_result = re.sub(r'^\s*\{.*?\}\s*', '', final_result, flags=re.DOTALL) 
+        final_result = final_result.strip()
         
-        return {"result": final_result.strip()}
+        return {"result": final_result}
 
     except Exception as e:
         print(f"Gemini API Error: {str(e)}")
+        # Print full Traceback for debugging
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500, 
             detail=f"Gemini API错误: {str(e)}"
         )
 
 if __name__ == "__main__":
+    # Ensure standard output is flushed
+    import sys
+    sys.stdout.reconfigure(line_buffering=True)
     uvicorn.run("main:app", host="0.0.0.0", port=8011, reload=True)
