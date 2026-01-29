@@ -123,11 +123,11 @@ async def ai_analyze(
 请务必输出标准、合法的 JSON 格式，且所有内容必须使用简体中文 (Simplified Chinese)。
 
 JSON 结构如下：
-{
+{{
     "img_size": "{img_width}x{img_height}",
     "visual_colors": "色彩描述...",
     "description": "详细画面描述..."
-}
+}}
 
 不要包含 Markdown 代码块标记（如 ```json），直接输出 JSON 字符串。
 确保不需要任何后续处理即可被 json.loads 解析。
