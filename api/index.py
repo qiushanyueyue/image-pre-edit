@@ -96,14 +96,21 @@ def health_check():
 
 @app.get("/api/debug-env")
 def debug_env():
-    import pkg_resources
-    installed_packages = [(d.project_name, d.version) for d in pkg_resources.working_set]
-    return {
-        "status": "ok",
-        "python_version": sys.version,
-        "packages": installed_packages,
-        "env_vars": [k for k in os.environ.keys() if "GEMINI" in k or "VERCEL" in k] 
-    }
+    data = {}
+    try:
+        import sys
+        import importlib.metadata
+        data["python_version"] = sys.version
+        data["packages"] = [
+            f"{dist.metadata['Name']}=={dist.version}"
+            for dist in importlib.metadata.distributions()
+        ]
+    except Exception as e:
+        data["error"] = str(e)
+    
+    data["env_vars"] = [k for k in os.environ.keys() if "GEMINI" in k or "VERCEL" in k]
+    data["status"] = "ok"
+    return data
 
 @app.get("/")
 def read_root():
