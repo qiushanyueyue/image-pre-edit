@@ -120,12 +120,17 @@ async def ai_analyze(
         
         step1_prompt = f"""
 分析这张图片。
-输出一段简单的纯文本分析，包含以下信息：
-1. 图片尺寸 (Image Size): {img_width}x{img_height} (已自动读取)
-2. 视觉色彩 (Visual Colors): 主色调、配色方案
-3. 详细画面描述 (Detailed Description): 主体、环境、光影、风格
+请务必输出标准、合法的 JSON 格式，且所有内容必须使用简体中文 (Simplified Chinese)。
 
-不需要严格的JSON格式，清晰列出即可。
+JSON 结构如下：
+{
+    "img_size": "{img_width}x{img_height}",
+    "visual_colors": "色彩描述...",
+    "description": "详细画面描述..."
+}
+
+不要包含 Markdown 代码块标记（如 ```json），直接输出 JSON 字符串。
+确保不需要任何后续处理即可被 json.loads 解析。
 """
         
         # USE RETRY HELPER
@@ -135,14 +140,27 @@ async def ai_analyze(
 
         # If mode is JSON, return the analysis result directly
         if mode == "json":
-            cleaned_json = re.sub(r'```json\n', '', analysis_result)
-            cleaned_json = re.sub(r'```', '', cleaned_json).strip()
-            return {
-                "result": f"""{{
-  "图片物理尺寸": "{img_width}x{img_height}",
-  "AI分析内容": {json.dumps(cleaned_json, ensure_ascii=False)}
-}}"""
-            }
+            try:
+                # Attempt to clean up potential markdown block if AI ignores instruction
+                cleaned_json_str = re.sub(r'```json\n', '', analysis_result)
+                cleaned_json_str = re.sub(r'```', '', cleaned_json_str).strip()
+                
+                # Parse to ensure it's valid JSON
+                parsed_json = json.loads(cleaned_json_str)
+                
+                # Re-format for returning, although frontend might expect raw string or object
+                # The user wants "Standard JSON format"
+                return {
+                    "result": json.dumps({
+                        "图片物理尺寸": parsed_json.get("img_size", f"{img_width}x{img_height}"),
+                        "视觉色彩": parsed_json.get("visual_colors", ""),
+                        "详细画面描述": parsed_json.get("description", "")
+                    }, ensure_ascii=False, indent=2)
+                }
+            except json.JSONDecodeError:
+                # Fallback if AI fails to generate strict JSON
+                print("JSON Decode Error, returning raw text")
+                return {"result": analysis_result}
 
         # Step 2: Prompt Generation
         print("Step 2: Generating final prompt with strict adherence...")
@@ -167,7 +185,8 @@ async def ai_analyze(
 1. **最高优先级**：必须**无条件、严格遵守**用户的【提示词要求】。如果用户要求修改画面（如“变成晚上”、“改成红色”），必须完全执行，并忽略视觉分析中冲突的部分。
 2. **需求细化**：不仅仅是照搬用户的要求，必须对其进行**专业细化和扩展**。例如用户说“要科幻感”，你必须扩展为“赛博朋克风格、霓虹灯效、金属质感、未来建筑结构”等具体描述。
 3. **元素统一**：在满足用户要求的前提下，保持其余非修改元素（构图、未提及的物体、基础材质）与原图【视觉分析结果】高度统一。
-4. **格式规范**：必须是纯文本，不要包含 Markdown 代码块标记（如 ```json），不要包含任何解释、前缀或废话。只输出最终的 prompt 内容。
+4. **格式规范**：必须是纯文本，不要包含 Markdown 代码块标记（如 ```json）。
+5. **语言要求**：最终输出的 Prompt 必须翻译或保持为 **简体中文 (Simplified Chinese)**，方便用户阅读。哪怕生成的依然是生图词，也请用中文描述（或者中英对照，优先中文）。
 """
 
         # USE RETRY HELPER
