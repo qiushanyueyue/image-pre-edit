@@ -4,6 +4,69 @@ import { useAppStore } from '../../store/useStore';
 import { clsx } from 'clsx';
 
 export const RightPanel: React.FC = () => {
+
+    // Helper to compress image if too large
+    const compressImage = (blob: Blob, maxSizeMB: number = 4): Promise<Blob> => {
+        return new Promise((resolve, reject) => {
+            if (blob.size <= maxSizeMB * 1024 * 1024) {
+                resolve(blob);
+                return;
+            }
+
+            const img = new Image();
+            const url = URL.createObjectURL(blob);
+
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                // Resize logic: Max dimension 1920px
+                const MAX_DIM = 1920;
+                if (width > MAX_DIM || height > MAX_DIM) {
+                    if (width > height) {
+                        height = (height * MAX_DIM) / width;
+                        width = MAX_DIM;
+                    } else {
+                        width = (width * MAX_DIM) / height;
+                        height = MAX_DIM;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    reject(new Error('Canvas context failed'));
+                    return;
+                }
+
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Compress to JPEG with 0.8 quality
+                canvas.toBlob(
+                    (newBlob) => {
+                        if (newBlob) {
+                            console.log(`Image compressed: ${(blob.size / 1024 / 1024).toFixed(2)}MB -> ${(newBlob.size / 1024 / 1024).toFixed(2)}MB`);
+                            resolve(newBlob);
+                        } else {
+                            reject(new Error('Compression failed'));
+                        }
+                    },
+                    'image/jpeg',
+                    0.8
+                );
+            };
+
+            img.onerror = (err) => {
+                URL.revokeObjectURL(url);
+                reject(err);
+            };
+
+            img.src = url;
+        });
+    };
     const {
         imageUrl,
         overlays, addOverlay, removeOverlay,
@@ -66,9 +129,20 @@ export const RightPanel: React.FC = () => {
         try {
             // 获取图片blob
             const response = await fetch(imageUrl);
-            const blob = await response.blob();
+            let blob = await response.blob();
+
+            // Client-side compression if > 3.5MB (Safe guard for Vercel 4.5MB limit)
+            if (blob.size > 3.5 * 1024 * 1024) {
+                try {
+                    console.log('Image too large detection, compressing...');
+                    blob = await compressImage(blob, 3.5);
+                } catch (e) {
+                    console.error('Compression failed, trying original', e);
+                }
+            }
+
             const formData = new FormData();
-            formData.append('image', blob, 'image.png');
+            formData.append('image', blob, 'image.jpg'); // Rename to .jpg as compression converts format
             formData.append('user_request', userPrompt); // User plain text request
             formData.append('mode', mode); // Pass mode to backend
 
