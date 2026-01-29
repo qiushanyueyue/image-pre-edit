@@ -10,24 +10,26 @@ An intelligent workspace for image pre-processing, analysis, and AI prompt engin
 ## 🌟 Core Features
 
 ### 1. 🖼️ Image Pre-processing & Analysis
+- **NEW! Sticker Management**: Drag and drop stickers directly onto the canvas. Visual overlays (stickers) are automatically rendered *below* drawing layers for seamless editing.
 - **Automatic Semantic Extraction**: Deeply understands scene composition, subjects, and lighting.
 - **Smart Cropping & Resizing**: Prepare images for diverse aspect ratio requirements.
 - **Dominant Color Analysis**: Extracts hex codes and color relationships for design consistency.
 
-### 2. 🧠 AI-Powered Prompt Extension
-- **Instruction-First Logic**: The AI treats user modifications as the absolute highest priority (e.g., "Make it cinematic blue").
-- **Professional Augmentation**: Automatically enriches simple keywords with technical descriptors (lighting, camera lens, art style).
-- **Instruction Strictness**: Maintains visual consistency while strictly following editing directives.
+### 2. 🧠 AI-Powered Prompt Extension (Powered by Google Gemini)
+- **Model Upgrade**: Now utilizing **Google Gemini 1.5 Flash / 2.0 Flash Lite** for superior speed and visual understanding.
+- **Smart Rate Limiting**: Built-in intelligent retry logic automatically handles API rate limits (429 errors), ensuring high success rates even on free tiers.
+- **Instruction-First Logic**: The AI treats user modifications as the absolute highest priority.
+- **Professional Augmentation**: Automatically enriches simple keywords with technical descriptors.
 
-### 3. ⚡ Local-Cloud Hybrid Architecture
-- **Private & Free**: Leverages local **Ollama (Qwen-VL)**算力 via DDNS tunnels.
-- **Vercel Ready**: Seamlessly deploy the frontend and API bridge to Vercel for remote access without exposing local secrets.
+### 3. ⚡ Smart Architecture
+- **Private & Configurable**: Direct integration with Google Gemini API.
+- **Vercel Ready**: Seamlessly deploy frontend and backend to Vercel.
 
 ## 🔄 Intelligent Workflow
 
 ```mermaid
 graph LR
-    IMG[Original Image] --> AI[Visual Analysis]
+    IMG[Original Image] --> AI[Gemini Visual Analysis]
     AI --> DIM[Dimensions/Colors]
     AI --> DESC[Visual Description]
     DESC --> USR[User Requirements]
@@ -38,22 +40,26 @@ graph LR
 
 ## 🛠️ Technical Stack
 
-- **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, Zustand.
-- **Backend**: FastAPI (Python 3.9+).
-- **Core AI**: Qwen-VL (OpenSource Multimodal Model).
+- **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, Zustand, Konva.js.
+- **Backend**: FastAPI (Python 3.10+).
+- **Core AI**: Google Gemini API (gemini-flash-latest).
 
 ## 🚀 Getting Started
 
 ### 1. Requirements
 - Node.js & npm/pnpm
-- Python 3.9+
-- A running Ollama instance with `qwen3-vl` (or similar multimodal model).
+- Python 3.10+
+- Google Gemini API Key
 
 ### 2. Environment Setup
-Create a `.env` file (not tracked in Git):
+Create a `.env` file (not tracked in Git) in the `backend` directory:
 ```env
-QWEN_VL_ENDPOINT=http://your-ddns-or-local-ip:11434/v1
-QWEN_VL_API_KEY=ollama
+GEMINI_API_KEY=AIzaSymylongapikey...
+```
+
+For Frontend (Optional, for Vercel deployment):
+```env
+VITE_API_URL=https://your-backend-production-url.com
 ```
 
 ### 3. Local Run
@@ -62,16 +68,19 @@ QWEN_VL_API_KEY=ollama
 npm install
 pip install -r backend/requirements.txt
 
-# Start backend
+# Start backend (Port 8011)
 python backend/main.py
 
-# Start frontend
+# Start frontend (Port 3333)
 npm run dev
 ```
 
 ## 🌐 Vercel Deployment
 
-This project is optimized for Vercel. Simply import your GitHub repository and set the environment variables. The `vercel.json` will automatically route `/api/*` calls to the Python backend bridge.
+This project is optimized for Vercel.
+1. Import your GitHub repository.
+2. Set the Environment Variable `GEMINI_API_KEY` in Vercel Project Settings.
+3. The `vercel.json` and `api/index.py` bridge will automatically handle backend routing.
 
 ---
 *Created with ❤️ for the AI Art Community.*
