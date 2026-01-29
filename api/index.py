@@ -8,45 +8,24 @@ import io
 import traceback
 import sys
 
-# Try imports that might fail if dependencies aren't perfect, to provide better error logs
-try:
-    from dotenv import load_dotenv
-    import google.generativeai as genai
-    from google.api_core import exceptions
-    from PIL import Image
-except ImportError as e:
-    print(f"Import Error: {e}")
-    # In Vercel, we might not see stdout easily, so we can't do much but hope
-    pass
-
-# Load environment variables (mostly for local dev, Vercel injects them)
-try:
-    load_dotenv()
-except:
-    pass
-
-# Google Gemini Configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# Configuration for Vercel
-# If run locally, it will print warning. On Vercel, logging is captured.
-if not GEMINI_API_KEY:
-    print("Warning: GEMINI_API_KEY not set")
-
-if GEMINI_API_KEY:
+# Lazy / Safe Import wrapper
+def safe_import_genai():
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        print(f"GenAI configure failed: {e}")
+        import google.generativeai as genai
+        return genai
+    except ImportError as e:
+        print(f"GenAI Import Error: {e}")
+        return None
 
-# Use Gemini Flash Latest
-MODEL_NAME = "gemini-flash-latest"
+def safe_import_pil():
+    try:
+        from PIL import Image
+        return Image
+    except ImportError as e:
+        print(f"PIL Import Error: {e}")
+        return None
 
-try:
-    model = genai.GenerativeModel(MODEL_NAME)
-except:
-    model = None
-
+# Initialize app FIRST to ensure Vercel can find the 'app' entry point instantly
 app = FastAPI()
 
 # Configuration
@@ -58,44 +37,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Load env vars
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except:
+    pass
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+MODEL_NAME = "gemini-flash-latest"
+genai_lib = safe_import_genai()
+pil_lib = safe_import_pil()
+
+# Configure GenAI immediately if available, but don't crash if not
+model = None
+if genai_lib and GEMINI_API_KEY:
+    try:
+        genai_lib.configure(api_key=GEMINI_API_KEY)
+        model = genai_lib.GenerativeModel(MODEL_NAME)
+    except Exception as e:
+        print(f"GenAI Init Failed: {e}")
+
 async def generate_with_retry(prompt_parts, retries=5, default_delay=5):
-    """
-    Helper function to generate content with smart retry logic for 429 errors.
-    """
     if not model:
-        raise Exception("Gemini Model not initialized (Check API Key or Dependencies)")
+        raise HTTPException(status_code=503, detail="Gemini Model not initialized (Import failed or Key missing)")
 
     for i in range(retries):
         try:
             return await model.generate_content_async(prompt_parts)
         except Exception as e:
             error_str = str(e)
-            # Check for ResourceExhausted (429) or ServiceUnavailable (503)
             is_rate_limit = "429" in error_str or "ResourceExhausted" in error_str
             
             if is_rate_limit:
                 if i == retries - 1:
                     print(f"Rate limit hit. Max retries ({retries}) exceeded.")
                     raise e
-                
-                # Smart delay: Try to parse "retry_delay { seconds: X }"
-                wait_time = default_delay * (2 ** i) # Default backoff
-                
-                # Regex to find "retry_delay { seconds: 35 }" or similar
+                wait_time = default_delay * (2 ** i)
                 match = re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+(\.\d+)?)', error_str)
                 if match:
-                    parsed_delay = float(match.group(1))
-                    wait_time = parsed_delay + 1.0 # Add 1s buffer
-                    print(f"Found explicit retry delay in error: {wait_time}s")
-                
-                print(f"Rate limit hit (429). Retrying in {wait_time:.2f}s... (Attempt {i+1}/{retries})")
+                    wait_time = float(match.group(1)) + 1.0
+                print(f"Rate limit hit (429). Retrying in {wait_time:.2f}s...")
                 await asyncio.sleep(wait_time)
             else:
                 raise e
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "model": MODEL_NAME, "api_key_set": bool(GEMINI_API_KEY)}
+    return {
+        "status": "ok", 
+        "model": MODEL_NAME, 
+        "api_key_set": bool(GEMINI_API_KEY),
+        "deps": {
+            "genai": bool(genai_lib),
+            "pil": bool(pil_lib)
+        }
+    }
 
 @app.get("/api/debug-env")
 def debug_env():
@@ -116,14 +113,21 @@ def read_root():
 async def ai_analyze(
     user_request: str = Form(""),
     image: UploadFile = File(...),
-    mode: str = Form("prompt") # "json" or "prompt"
+    mode: str = Form("prompt")
 ):
+    # Check dependencies at runtime
+    if not genai_lib or not model:
+         raise HTTPException(status_code=503, detail="Google Generative AI library failed to load or API Key invalid.")
+    
+    if not pil_lib:
+         raise HTTPException(status_code=503, detail="Pillow (Image library) failed to load.")
+
     try:
         print(f"Received request: {user_request}, mode: {mode}")
         
         # Read image content
         image_content = await image.read()
-        pil_img = Image.open(io.BytesIO(image_content))
+        pil_img = pil_lib.open(io.BytesIO(image_content))
         img_width, img_height = pil_img.size
         
         # Step 1: Visual Analysis
@@ -179,7 +183,7 @@ JSON 结构如下：
         if not user_request:
             user_request = "保持原图风格，优化细节质感"
 
-        ## Role: Google Gemini / Imagen 3 专用高级提示词专家 (Prompt Engineer)
+        system_prompt = f"""## Role: Google Gemini / Imagen 3 专用高级提示词专家 (Prompt Engineer)
 
 ## Mission:
 你的核心任务是将用户的简单指令（User Request）与参考图的视觉分析（Visual Analysis）相结合，以此生成一段**极度详细、画面感极强、符合 Google Gemini / Imagen 生图逻辑**的 **简体中文** 提示词。
@@ -206,7 +210,7 @@ JSON 结构如下：
    - 使用**优美的描述性长句** + **关键修饰词**的组合。
    - 强调**光影 (Lighting)** 和 **材质 (Texture)** 的描述。
    - 确保提示词能被生图 AI (如 Imagen 3, Midjourney) 准确理解。
-
+"""
         # USE RETRY HELPER
         response2 = await generate_with_retry(system_prompt)
         final_result = response2.text
