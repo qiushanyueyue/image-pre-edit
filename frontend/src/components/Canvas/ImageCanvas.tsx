@@ -527,6 +527,23 @@ export const ImageCanvas: React.FC = () => {
                         </Layer>
 
                         {/* Drawings Layer - Eraser (destination-out) only clears this layer */}
+
+                        {/* Overlay Layer (Logos/Stickers) - Rendered FIRST so it is BELOW drawings */}
+                        <Layer>
+                            {overlays.map((overlay) => (
+                                <OverlayImageComponent
+                                    key={overlay.id}
+                                    overlay={overlay}
+                                    isSelected={selectedId === overlay.id}
+                                    onSelect={() => {
+                                        if (tool === 'select') selectShape(overlay.id);
+                                    }}
+                                    onChange={updateOverlay}
+                                />
+                            ))}
+                        </Layer>
+
+                        {/* Drawings Layer - Rendered AFTER stickers so it is ON TOP */}
                         <Layer>
                             {/* Drawings on the same layer as image so eraser (destination-out) works on background */}
                             {elements.map((el, i) => {
@@ -662,21 +679,6 @@ export const ImageCanvas: React.FC = () => {
                                 }
                                 return null;
                             })}
-                        </Layer>
-
-                        {/* Overlay Layer (Logos/Stickers) */}
-                        <Layer>
-                            {overlays.map((overlay) => (
-                                <OverlayImageComponent
-                                    key={overlay.id}
-                                    overlay={overlay}
-                                    isSelected={selectedId === overlay.id}
-                                    onSelect={() => {
-                                        if (tool === 'select') selectShape(overlay.id);
-                                    }}
-                                    onChange={updateOverlay}
-                                />
-                            ))}
                         </Layer>
 
                         {/* Preview/Utility Layer (Not erased) */}

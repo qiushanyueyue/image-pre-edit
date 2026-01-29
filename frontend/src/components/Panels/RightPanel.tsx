@@ -14,15 +14,40 @@ export const RightPanel: React.FC = () => {
     const [userPrompt, setUserPrompt] = useState<string>('');
     const [analyzingMode, setAnalyzingMode] = useState<'json' | 'prompt' | null>(null);
     const [copied, setCopied] = useState(false);
+    const [isDragOver, setIsDragOver] = useState(false);
 
-    const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
+    const processFiles = (files: FileList | null) => {
         if (files) {
             Array.from(files).forEach(file => {
-                const url = URL.createObjectURL(file);
-                addOverlay({ url, x: 100, y: 100, width: 200, height: 200 });
+                if (file.type.startsWith('image/')) {
+                    const url = URL.createObjectURL(file);
+                    addOverlay({ url, x: 100, y: 100, width: 200, height: 200 });
+                }
             });
         }
+    };
+
+    const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        processFiles(e.target.files);
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+        processFiles(e.dataTransfer.files);
     };
 
     const handleCopyJson = () => {
@@ -48,7 +73,13 @@ export const RightPanel: React.FC = () => {
             formData.append('mode', mode); // Pass mode to backend
 
             console.log(`正在调用 AI API (${mode})...`);
-            const res = await fetch('http://localhost:8011/api/ai-analyze', {
+
+            // Dynamic API URL handling
+            const apiUrl = import.meta.env.VITE_API_URL
+                ? `${import.meta.env.VITE_API_URL}/api/ai-analyze`
+                : '/api/ai-analyze';
+
+            const res = await fetch(apiUrl, {
                 method: 'POST',
                 body: formData
             });
@@ -87,7 +118,16 @@ export const RightPanel: React.FC = () => {
                 </h3>
 
                 {/* Upload button */}
-                <label className="flex flex-col items-center justify-center w-full h-16 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all mb-2">
+                <label
+                    className={clsx(
+                        "flex flex-col items-center justify-center w-full h-16 border-2 border-dashed rounded-xl cursor-pointer transition-all mb-2",
+                        isDragOver ? "border-blue-500 bg-blue-50" : "border-slate-300 hover:border-blue-500 hover:bg-blue-50"
+                    )}
+                    onDragOver={handleDragOver}
+                    onDragEnter={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                >
                     <div className="flex flex-col items-center justify-center">
                         <Upload className="w-6 h-6 text-slate-400 mb-1" />
                         <p className="text-xs text-slate-500">拖拽Or点击上传</p>
