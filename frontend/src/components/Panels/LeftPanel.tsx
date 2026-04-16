@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore, type ToolType } from '../../store/useStore';
 import {
+    type LucideIcon,
     MousePointer2,
     Hand,
     Crop,
@@ -17,7 +18,7 @@ import {
     Trash2,
     Activity,
     Brush,
-    Copy // Added Copy icon
+    Copy
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useState } from 'react';
@@ -25,7 +26,7 @@ import { useState } from 'react';
 // Extracted ToolButton for stability and performance
 const ToolButton = ({ t, icon: Icon, label, onClick, isActive, disabled }: {
     t: ToolType | 'crop' | 'undo' | 'redo' | 'clear',
-    icon: any,
+    icon: LucideIcon,
     label: string,
     onClick?: () => void,
     isActive: boolean,
@@ -78,7 +79,7 @@ export const LeftPanel = () => {
 
     const [newPrompt, setNewPrompt] = useState('');
 
-    const tools: { t: ToolType | 'crop', icon: any, label: string }[] = [
+    const tools: { t: ToolType | 'crop', icon: LucideIcon, label: string }[] = [
         { t: 'select', icon: MousePointer2, label: '选择' },
         { t: 'hand', icon: Hand, label: '拖动' },
         { t: 'crop', icon: Crop, label: '裁剪' },
@@ -93,7 +94,7 @@ export const LeftPanel = () => {
         { t: 'line', icon: Minus, label: '直线' },
     ];
 
-    const historyTools: { t: 'undo' | 'redo' | 'clear', icon: any, label: string }[] = [
+    const historyTools: { t: 'undo' | 'redo' | 'clear', icon: LucideIcon, label: string }[] = [
         { t: 'undo', icon: Undo2, label: '撤销' },
         { t: 'redo', icon: Redo2, label: '重做' },
         { t: 'clear', icon: Trash2, label: '清空' },
@@ -298,5 +299,3 @@ export const LeftPanel = () => {
         </div>
     );
 };
-
-

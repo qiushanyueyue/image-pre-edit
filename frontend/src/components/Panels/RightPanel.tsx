@@ -70,7 +70,6 @@ export const RightPanel: React.FC = () => {
     const {
         imageUrl,
         overlays, addOverlay, removeOverlay,
-        prompts, addPrompt,
         jsonResult, setJsonResult
     } = useAppStore();
 
@@ -175,9 +174,9 @@ export const RightPanel: React.FC = () => {
                 setJsonResult(typeof data === 'string' ? data : JSON.stringify(data, null, 2));
             }
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('AI分析失败:', error);
-            const msg = error.message || String(error);
+            const msg = error instanceof Error ? error.message : String(error);
             alert(`❌ AI分析失败: ${msg}\n\n如有问题，请检查网络或稍后重试。`);
         } finally {
             setAnalyzingMode(null);

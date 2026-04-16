@@ -15,23 +15,23 @@ An intelligent workspace for image pre-processing, analysis, and AI prompt engin
 - **Smart Cropping & Resizing**: Prepare images for diverse aspect ratio requirements.
 - **Dominant Color Analysis**: Extracts hex codes and color relationships for design consistency.
 
-### 2. 🧠 AI-Powered Prompt Extension (Powered by Google Gemini)
-- **Model Upgrade**: Now utilizing **Google Gemini 1.5 Flash / 2.0 Flash Lite** for superior speed and visual understanding.
-- **Smart Rate Limiting**: Built-in intelligent retry logic automatically handles API rate limits (429 errors), ensuring high success rates even on free tiers.
+### 2. 🧠 AI-Powered Prompt Extension
+- **视觉分析模型**: 使用 **`gemma4:e4b`**，默认通过 `http://yytianjin.yyboxdns.com:12524/` 调用。
+- **结构化反推 JSON**: 输出中文字段的可反推文生图描述，可直接继续加工为提示词。
 - **Instruction-First Logic**: The AI treats user modifications as the absolute highest priority.
 - **Professional Augmentation**: Automatically enriches simple keywords with technical descriptors.
 
 ### 3. ⚡ Smart Architecture
-- **Private & Configurable**: Direct integration with Google Gemini API.
+- **Private & Configurable**: Direct integration with configurable HTTP vision service.
 - **Vercel Ready**: Seamlessly deploy frontend and backend to Vercel.
 
 ## 🔄 Intelligent Workflow
 
 ```mermaid
 graph LR
-    IMG[Original Image] --> AI[Gemini Visual Analysis]
+    IMG[Original Image] --> AI[Gemma Visual Analysis]
     AI --> DIM[Dimensions/Colors]
-    AI --> DESC[Visual Description]
+    AI --> DESC[Reverse Prompt JSON]
     DESC --> USR[User Requirements]
     USR --> EXT[AI Prompt Extension]
     EXT --> FINAL[Optimized Prompt]
@@ -42,19 +42,20 @@ graph LR
 
 - **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, Zustand, Konva.js.
 - **Backend**: FastAPI (Python 3.10+).
-- **Core AI**: Google Gemini API (gemini-flash-latest).
+- **Core AI**: Configurable vision HTTP service (`gemma4:e4b` by default).
 
 ## 🚀 Getting Started
 
 ### 1. Requirements
 - Node.js & npm/pnpm
 - Python 3.10+
-- Google Gemini API Key
+- Reachable vision model HTTP service
 
 ### 2. Environment Setup
-Create a `.env` file (not tracked in Git) in the `backend` directory:
+Create a `.env` file (not tracked in Git) in the `backend` directory if you want to override defaults:
 ```env
-GEMINI_API_KEY=AIzaSymylongapikey...
+VISION_API_BASE_URL=http://yytianjin.yyboxdns.com:12524
+VISION_MODEL_NAME=gemma4:e4b
 ```
 
 For Frontend (Optional, for Vercel deployment):
@@ -79,7 +80,7 @@ npm run dev
 
 This project is optimized for Vercel.
 1. Import your GitHub repository.
-2. Set the Environment Variable `GEMINI_API_KEY` in Vercel Project Settings.
+2. Set the Environment Variables `VISION_API_BASE_URL` and `VISION_MODEL_NAME` in Vercel Project Settings.
 3. The `vercel.json` and `api/index.py` bridge will automatically handle backend routing.
 
 ---

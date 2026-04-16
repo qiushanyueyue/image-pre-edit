@@ -41,8 +41,12 @@ git push -u origin main
 
 1. 进入项目设置 → **Environment Variables**
 2. 添加变量：
-   - **Name**: `GEMINI_API_KEY`
-   - **Value**: `AIzaSyCcpkwmPgOK82k5wRDOmNqsL6ahMZJzRPo`
+   - **Name**: `VISION_API_BASE_URL`
+   - **Value**: `http://yytianjin.yyboxdns.com:12524`
+   - **Environment**: 选择 `Production`, `Preview`, `Development`（全选）
+3. 再添加变量：
+   - **Name**: `VISION_MODEL_NAME`
+   - **Value**: `gemma4:e4b`
    - **Environment**: 选择 `Production`, `Preview`, `Development`（全选）
 
 ### 4. 部署
@@ -88,9 +92,9 @@ https://your-project.vercel.app
 - ✓ 无需注册登录
 
 ### AI 分析功能
-- ✓ 使用 Gemini API Free Tier
+- ✓ 使用自定义视觉分析服务
 - ✓ 图片智能分析（中文输出）
-- ✓ 自动生成 JSON 格式数据
+- ✓ 自动生成可反推文生图的中文 JSON
 
 ### 图片编辑工具
 - ✓ 画笔、橡皮擦
@@ -101,19 +105,18 @@ https://your-project.vercel.app
 
 ## 常见问题
 
-### 1. API Key 安全性
+### 1. 视觉服务地址与安全性
 
 ⚠️ **重要提示**：
 - `.env` 文件已添加到 `.gitignore`，不会上传到 GitHub
 - 在 Vercel 中配置的环境变量是安全的
-- 不要在前端代码中直接暴露 API Key
+- 不要在前端代码中直接暴露内部模型服务地址
 
-### 2. 免费额度
+### 2. 服务可达性
 
-Gemini API Free Tier 限制：
-- 每分钟 15 次请求
-- 每天 1500 次请求
-- 足够个人使用
+- `http://yytianjin.yyboxdns.com:12524` 必须能被 Vercel 的 Python Serverless 环境访问
+- 如果该地址只在内网可达，线上视觉分析会失败
+- 建议先在部署后访问 `/api/health` 检查 `base_url` 与 `model` 是否正确
 
 ### 3. 本地开发
 
@@ -133,4 +136,4 @@ python main.py
 
 如有问题，请参考：
 - [Vercel 文档](https://vercel.com/docs)
-- [Gemini API 文档](https://ai.google.dev/docs)
+- 你的视觉模型服务接口文档

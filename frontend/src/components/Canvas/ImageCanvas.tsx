@@ -1,13 +1,20 @@
 import { useRef, useState, useEffect, Fragment } from 'react';
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Circle, Arrow, Text, Transformer } from 'react-konva';
 import useImage from 'use-image';
-import { useAppStore } from '../../store/useStore';
+import { useAppStore, type CanvasElement, type OverlayImage } from '../../store/useStore';
 import Konva from 'konva';
 import { clsx } from 'clsx';
-import { TextModal } from './TextModal';
+import { getTextBoxLayout, isPointInsideImageBounds, normalizeRect } from './canvasUtils';
 
 // Multi-Overlay Component with Individual Transformers
-const OverlayImageComponent = ({ overlay, isSelected, onSelect, onChange }: any) => {
+interface OverlayImageComponentProps {
+    overlay: OverlayImage;
+    isSelected: boolean;
+    onSelect: () => void;
+    onChange: (id: string, updates: Partial<OverlayImage>) => void;
+}
+
+const OverlayImageComponent = ({ overlay, isSelected, onSelect, onChange }: OverlayImageComponentProps) => {
     const [image] = useImage(overlay.url);
     const shapeRef = useRef<Konva.Image>(null);
     const trRef = useRef<Konva.Transformer>(null);
@@ -65,9 +72,140 @@ const OverlayImageComponent = ({ overlay, isSelected, onSelect, onChange }: any)
     );
 };
 
-const URLImage = ({ src }: { src: string }) => {
+const URLImage = ({ src, onLoad }: { src: string; onLoad: (bounds: { x: number; y: number; width: number; height: number }) => void }) => {
     const [image] = useImage(src);
+
+    useEffect(() => {
+        if (image) {
+            onLoad({ x: 0, y: 0, width: image.width, height: image.height });
+        }
+    }, [image, onLoad]);
+
     return <KonvaImage image={image} />;
+};
+
+interface TextElementComponentProps {
+    element: CanvasElement;
+    isSelected: boolean;
+    onSelect: (id: string) => void;
+    onChange: (id: string, updates: Record<string, number | string>) => void;
+    onEdit: (id: string) => void;
+    tool: string;
+    setIsHoveringElement: (hovering: boolean) => void;
+}
+
+const TextElementComponent = ({
+    element,
+    isSelected,
+    onSelect,
+    onChange,
+    onEdit,
+    tool,
+    setIsHoveringElement,
+}: TextElementComponentProps) => {
+    const textRef = useRef<Konva.Text>(null);
+    const transformerRef = useRef<Konva.Transformer>(null);
+
+    useEffect(() => {
+        if (isSelected && textRef.current && transformerRef.current) {
+            transformerRef.current.nodes([textRef.current]);
+            transformerRef.current.getLayer()?.batchDraw();
+        }
+    }, [isSelected, element.width, element.height]);
+
+    return (
+        <Fragment>
+            <Text
+                ref={textRef}
+                id={element.id ?? ''}
+                x={element.x ?? 0}
+                y={element.y ?? 0}
+                width={element.width ?? 0}
+                height={element.height ?? 0}
+                padding={element.padding ?? 8}
+                text={element.text ?? ''}
+                fontSize={element.size ?? 20}
+                fill={element.color ?? '#000000'}
+                lineHeight={1.2}
+                verticalAlign="middle"
+                wrap="word"
+                draggable
+                onClick={(e) => {
+                    if (tool === 'select' || tool === 'text') {
+                        e.cancelBubble = true;
+                        onSelect(element.id ?? '');
+                    }
+                }}
+                onTap={(e) => {
+                    if (tool === 'select' || tool === 'text') {
+                        e.cancelBubble = true;
+                        onSelect(element.id ?? '');
+                    }
+                }}
+                onDblClick={() => onEdit(element.id ?? '')}
+                onDblTap={() => onEdit(element.id ?? '')}
+                onMouseEnter={(e) => {
+                    const container = e.target.getStage()?.container();
+                    if (container) container.style.cursor = tool === 'hand' ? 'grab' : 'move';
+                    setIsHoveringElement(true);
+                }}
+                onMouseLeave={(e) => {
+                    const container = e.target.getStage()?.container();
+                    if (container) container.style.cursor = tool === 'text' ? 'text' : 'default';
+                    setIsHoveringElement(false);
+                }}
+                onDragEnd={(e) => {
+                    onChange(element.id ?? '', {
+                        x: e.target.x(),
+                        y: e.target.y(),
+                    });
+                }}
+                onTransformEnd={() => {
+                    const node = textRef.current;
+                    if (!node) return;
+
+                    const layout = getTextBoxLayout({
+                        width: node.width() * node.scaleX(),
+                        height: node.height() * node.scaleY(),
+                    });
+
+                    node.scaleX(1);
+                    node.scaleY(1);
+
+                    onChange(element.id ?? '', {
+                        x: node.x(),
+                        y: node.y(),
+                        width: layout.width,
+                        height: layout.height,
+                        size: layout.fontSize,
+                    });
+                }}
+            />
+            {isSelected && (
+                <Transformer
+                    ref={transformerRef}
+                    rotateEnabled={false}
+                    enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right']}
+                    boundBoxFunc={(oldBox, newBox) => {
+                        const layout = getTextBoxLayout({
+                            width: newBox.width,
+                            height: newBox.height,
+                        });
+
+                        if (!Number.isFinite(newBox.width) || !Number.isFinite(newBox.height)) {
+                            return oldBox;
+                        }
+
+                        return {
+                            ...newBox,
+                            width: layout.width,
+                            height: layout.height,
+                        };
+                    }}
+                />
+            )}
+        </Fragment>
+    );
 };
 
 export const ImageCanvas: React.FC = () => {
@@ -94,14 +232,21 @@ export const ImageCanvas: React.FC = () => {
     const [cropBox, setCropBox] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
     const [isCropping, setIsCropping] = useState(false);
 
-    // Text Modal state
-    const [textModal, setTextModal] = useState<{
-        isOpen: boolean,
-        x: number,
-        y: number,
-        text: string,
-        id?: string // If id exists, it's editing; otherwise, it's new
-    }>({ isOpen: false, x: 0, y: 0, text: '' });
+    const [imageBounds, setImageBounds] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+    const textDragStartRef = useRef<{ x: number; y: number } | null>(null);
+    const [draftTextBox, setDraftTextBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+    const [textEditor, setTextEditor] = useState<{
+        id: string;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        text: string;
+        color: string;
+        fontSize: number;
+        isNew: boolean;
+    } | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     // Drag and drop upload
     const [isDragOver, setIsDragOver] = useState(false);
@@ -114,6 +259,19 @@ export const ImageCanvas: React.FC = () => {
 
     // Listen for TopMenu actions
     const { canvasAction, setCanvasAction } = useAppStore();
+
+    function handleDownload() {
+        const uri = stageRef.current?.toDataURL();
+        if (uri) {
+            const link = document.createElement('a');
+            link.download = 'edited-image.png';
+            link.href = uri;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    }
+
     useEffect(() => {
         if (canvasAction === 'EXPORT_IMAGE') {
             handleDownload();
@@ -121,11 +279,106 @@ export const ImageCanvas: React.FC = () => {
         }
     }, [canvasAction, setCanvasAction]);
 
+    useEffect(() => {
+        if (!textEditor || !textareaRef.current) return;
+
+        textareaRef.current.focus();
+        textareaRef.current.select();
+    }, [textEditor]);
+
     const checkDeselect = (e: Konva.KonvaEventObject<MouseEvent> | Konva.KonvaEventObject<TouchEvent>) => {
         const clickedOnEmpty = e.target === e.target.getStage();
         if (clickedOnEmpty) {
             selectShape(null);
         }
+    };
+
+    const updateElementById = (id: string, updates: Record<string, number | string>, shouldPushHistory = true) => {
+        const newElements = elements.map((element) => (
+            element.id === id ? { ...element, ...updates } : element
+        ));
+        setElements(newElements);
+        if (shouldPushHistory) {
+            pushHistory({ elements: newElements });
+        }
+    };
+
+    const removeElementById = (id: string) => {
+        const newElements = elements.filter((element) => element.id !== id);
+        setElements(newElements);
+        pushHistory({ elements: newElements });
+    };
+
+    const openTextEditor = (config: {
+        id: string;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        text: string;
+        color: string;
+        fontSize: number;
+        isNew: boolean;
+    }) => {
+        setTextEditor(config);
+        selectShape(config.id);
+    };
+
+    const commitTextEditor = (shouldSave = true) => {
+        if (!textEditor) return;
+
+        const trimmed = textEditor.text.trim();
+        if (!shouldSave || !trimmed) {
+            if (!textEditor.isNew && !trimmed) {
+                removeElementById(textEditor.id);
+            }
+            setTextEditor(null);
+            setDraftTextBox(null);
+            textDragStartRef.current = null;
+            return;
+        }
+
+        const updatedElement: CanvasElement = {
+            id: textEditor.id,
+            tool: 'text',
+            x: textEditor.x,
+            y: textEditor.y,
+            width: textEditor.width,
+            height: textEditor.height,
+            text: textEditor.text,
+            color: textEditor.color,
+            size: textEditor.fontSize,
+            padding: 8,
+            draggable: true,
+        };
+
+        const newElements = textEditor.isNew
+            ? [...elements, updatedElement]
+            : elements.map((element) => (element.id === textEditor.id ? { ...element, ...updatedElement } : element));
+
+        setElements(newElements);
+        pushHistory({ elements: newElements });
+        setTextEditor(null);
+        setDraftTextBox(null);
+        textDragStartRef.current = null;
+    };
+
+    const openExistingTextEditor = (id: string) => {
+        const textElement = elements.find((element) => element.id === id && element.tool === 'text');
+        if (!textElement) return;
+
+        setDraftTextBox(null);
+        openTextEditor({
+            id: textElement.id ?? id,
+            x: textElement.x ?? 0,
+            y: textElement.y ?? 0,
+            width: textElement.width ?? 180,
+            height: textElement.height ?? 56,
+            text: textElement.text ?? '',
+            color: textElement.color ?? brushColor,
+            fontSize: textElement.size ?? fontSize,
+            isNew: false,
+        });
     };
 
     const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -152,6 +405,9 @@ export const ImageCanvas: React.FC = () => {
 
     const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
         console.log('Canvas handleMouseDown, tool:', tool);
+        if (textEditor) {
+            commitTextEditor();
+        }
         checkDeselect(e);
         if (tool === 'hand' || tool === 'select') return;
 
@@ -176,21 +432,15 @@ export const ImageCanvas: React.FC = () => {
             return;
         }
 
-        // Text Tool - Click to Open Modal
         if (tool === 'text') {
-            if (!stage) return;
-            // Allow adding text on top of images/shapes, but not if clicking existing text (which triggers edit)
-            // or transformer handles
             const targetName = e.target.className;
             if (targetName === 'Text' || targetName === 'Transformer') return;
-            // Only adding new text if clicking on empty space (not dragging existing)
-
-            setTextModal({
-                isOpen: true,
+            textDragStartRef.current = { x: pos.x, y: pos.y };
+            setDraftTextBox({
                 x: pos.x,
                 y: pos.y,
-                text: '',
-                id: undefined
+                width: 0,
+                height: 0,
             });
             return;
         }
@@ -198,6 +448,7 @@ export const ImageCanvas: React.FC = () => {
         // Line Tool - Drag to create line
         if (tool === 'line') {
             setElements([...elements, {
+                id: `line-${Date.now()}`,
                 tool: 'line',
                 points: [pos.x, pos.y, pos.x, pos.y],
                 color: brushColor,
@@ -212,6 +463,7 @@ export const ImageCanvas: React.FC = () => {
 
         if (tool === 'brush' || tool === 'eraser') {
             setElements([...elements, {
+                id: `${tool}-${Date.now()}`,
                 tool,
                 points: [pos.x, pos.y],
                 color: brushColor,
@@ -219,7 +471,12 @@ export const ImageCanvas: React.FC = () => {
                 opacity: brushOpacity
             }]);
         } else if (tool === 'rectangle' || tool === 'circle' || tool === 'arrow') {
+            if (tool === 'arrow' && imageBounds && isPointInsideImageBounds(pos, imageBounds)) {
+                isDrawing.current = false;
+                return;
+            }
             setElements([...elements, {
+                id: `${tool}-${Date.now()}`,
                 tool,
                 x: pos.x,
                 y: pos.y,
@@ -233,13 +490,23 @@ export const ImageCanvas: React.FC = () => {
         }
     };
 
-    const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-        if (!isDrawing.current && !isCropping) return;
-        if (tool === 'hand' || tool === 'select' || tool === 'text' || tool === 'polyline' || tool === 'polygon') return;
-
+    const handleMouseMove = () => {
         const stage = stageRef.current;
         const point = stage?.getRelativePointerPosition();
         if (!point) return;
+
+        if (tool === 'text' && draftTextBox && textDragStartRef.current) {
+            setDraftTextBox({
+                x: textDragStartRef.current.x,
+                y: textDragStartRef.current.y,
+                width: point.x - textDragStartRef.current.x,
+                height: point.y - textDragStartRef.current.y,
+            });
+            return;
+        }
+
+        if (!isDrawing.current && !isCropping) return;
+        if (tool === 'hand' || tool === 'select' || tool === 'text' || tool === 'polyline' || tool === 'polygon') return;
 
         // Update crop box while dragging
         if (isCropping && cropBox) {
@@ -255,15 +522,16 @@ export const ImageCanvas: React.FC = () => {
         // Create a shallow copy of the elements array
         const newElements = [...elements];
         const lastIndex = newElements.length - 1;
-        let lastElement = { ...newElements[lastIndex] };
+        const lastElement = { ...newElements[lastIndex] };
 
         if (tool === 'brush' || tool === 'eraser') {
-            lastElement.points = lastElement.points.concat([point.x, point.y]);
+            lastElement.points = (lastElement.points ?? []).concat([point.x, point.y]);
         } else if (tool === 'rectangle' || tool === 'circle') {
-            lastElement.width = point.x - lastElement.x;
-            lastElement.height = point.y - lastElement.y;
+            lastElement.width = point.x - (lastElement.x ?? 0);
+            lastElement.height = point.y - (lastElement.y ?? 0);
         } else if (tool === 'arrow' || tool === 'line') {
-            lastElement.points = [lastElement.points[0], lastElement.points[1], point.x, point.y];
+            const startPoints = lastElement.points ?? [point.x, point.y];
+            lastElement.points = [startPoints[0], startPoints[1], point.x, point.y];
         }
 
         newElements[lastIndex] = lastElement;
@@ -271,6 +539,37 @@ export const ImageCanvas: React.FC = () => {
     };
 
     const handleMouseUp = () => {
+        if (tool === 'text' && draftTextBox && textDragStartRef.current) {
+            const normalizedBox = normalizeRect(draftTextBox);
+            const hasDragged = Math.abs(draftTextBox.width) > 8 || Math.abs(draftTextBox.height) > 8;
+            const layout = hasDragged
+                ? getTextBoxLayout(normalizedBox)
+                : getTextBoxLayout({ width: 180, height: fontSize * 2.6 });
+            const origin = hasDragged
+                ? { x: normalizedBox.x, y: normalizedBox.y }
+                : { x: textDragStartRef.current.x, y: textDragStartRef.current.y };
+
+            openTextEditor({
+                id: `text-${Date.now()}`,
+                x: origin.x,
+                y: origin.y,
+                width: layout.width,
+                height: layout.height,
+                text: '',
+                color: brushColor,
+                fontSize: hasDragged ? layout.fontSize : Math.max(fontSize, layout.fontSize),
+                isNew: true,
+            });
+            setDraftTextBox({
+                x: origin.x,
+                y: origin.y,
+                width: layout.width,
+                height: layout.height,
+            });
+            textDragStartRef.current = null;
+            return;
+        }
+
         if (isDrawing.current) {
             pushHistory({ elements: [...elements] });
         }
@@ -301,6 +600,7 @@ export const ImageCanvas: React.FC = () => {
         });
 
         setImageUrl(croppedDataUrl);
+        setImageBounds(null);
         setCropBox(null);
         setElements([]);
         pushHistory({ imageUrl: croppedDataUrl, elements: [] });
@@ -309,20 +609,9 @@ export const ImageCanvas: React.FC = () => {
     const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
+            setImageBounds(null);
             setImageUrl(URL.createObjectURL(file));
             pushHistory({ imageUrl: URL.createObjectURL(file) });
-        }
-    };
-
-    const handleDownload = () => {
-        const uri = stageRef.current?.toDataURL();
-        if (uri) {
-            const link = document.createElement('a');
-            link.download = 'edited-image.png';
-            link.href = uri;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
         }
     };
 
@@ -362,6 +651,7 @@ export const ImageCanvas: React.FC = () => {
 
         const files = e.dataTransfer.files;
         if (files && files[0]) {
+            setImageBounds(null);
             setImageUrl(URL.createObjectURL(files[0]));
             pushHistory({ imageUrl: URL.createObjectURL(files[0]) });
         }
@@ -413,53 +703,19 @@ export const ImageCanvas: React.FC = () => {
             }
             // Escape 取消当前绘制
             if (e.key === 'Escape') {
+                if (textEditor) {
+                    commitTextEditor(false);
+                }
                 setPolylinePoints([]);
                 setPolygonPoints([]);
                 setCropBox(null);
+                setDraftTextBox(null);
                 selectShape(null);
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [tool, polylinePoints, polygonPoints, brushColor, brushSize, brushOpacity, elements]);
-
-    // Handle text double-click (Edit)
-    const handleTextDblClick = (id: string, currentText: string) => {
-        setTextModal({
-            isOpen: true,
-            x: 0, // Ignored for edit, usually
-            y: 0,
-            text: currentText,
-            id: id
-        });
-    };
-
-    // Handle Modal Confirm
-    const handleTextConfirm = (text: string) => {
-        if (textModal.id) {
-            // Update existing
-            setElements(elements.map(el =>
-                el.id === textModal.id ? { ...el, text: text } : el
-            ));
-            pushHistory({ elements: [...elements] }); // History tracks full state, but we need fresh elements reference
-        } else {
-            // Create new
-            const newId = `text-${Date.now()}`;
-            const newElements = [...elements, {
-                id: newId,
-                tool: 'text',
-                x: textModal.x,
-                y: textModal.y,
-                text,
-                color: brushColor,
-                size: fontSize,
-                draggable: true
-            }];
-            setElements(newElements);
-            pushHistory({ elements: newElements });
-        }
-        setTextModal({ ...textModal, isOpen: false });
-    };
+    }, [tool, polylinePoints, polygonPoints, brushColor, brushSize, brushOpacity, elements, textEditor, commitTextEditor, finalizePolyline, finalizePolygon]);
 
     // Container sizing
     const containerRef = useRef<HTMLDivElement>(null);
@@ -523,7 +779,7 @@ export const ImageCanvas: React.FC = () => {
                     >
                         {/* Background Image Layer - Separate so Eraser doesn't affect it */}
                         <Layer>
-                            <URLImage src={imageUrl} />
+                            <URLImage src={imageUrl} onLoad={setImageBounds} />
                         </Layer>
 
                         {/* Drawings Layer - Eraser (destination-out) only clears this layer */}
@@ -550,7 +806,7 @@ export const ImageCanvas: React.FC = () => {
                                 if (el.tool === 'brush' || el.tool === 'eraser') {
                                     return (
                                         <Line
-                                            key={i}
+                                            key={el.id ?? i}
                                             points={el.points}
                                             stroke={el.tool === 'eraser' ? '#000000' : el.color}
                                             strokeWidth={el.size}
@@ -566,46 +822,46 @@ export const ImageCanvas: React.FC = () => {
                                 } else if (el.tool === 'rectangle') {
                                     return (
                                         <Rect
-                                            key={i}
-                                            x={el.x}
-                                            y={el.y}
-                                            width={el.width}
-                                            height={el.height}
-                                            stroke={el.color}
-                                            strokeWidth={el.strokeWidth}
+                                            key={el.id ?? i}
+                                            x={el.x ?? 0}
+                                            y={el.y ?? 0}
+                                            width={el.width ?? 0}
+                                            height={el.height ?? 0}
+                                            stroke={el.color ?? '#000000'}
+                                            strokeWidth={el.strokeWidth ?? 1}
                                             opacity={el.opacity}
                                         />
                                     );
                                 } else if (el.tool === 'circle') {
                                     return (
                                         <Circle
-                                            key={i}
-                                            x={el.x + el.width / 2}
-                                            y={el.y + el.height / 2}
-                                            radius={Math.abs((el.width + el.height) / 4)}
-                                            stroke={el.color}
-                                            strokeWidth={el.strokeWidth}
+                                            key={el.id ?? i}
+                                            x={(el.x ?? 0) + (el.width ?? 0) / 2}
+                                            y={(el.y ?? 0) + (el.height ?? 0) / 2}
+                                            radius={Math.abs(((el.width ?? 0) + (el.height ?? 0)) / 4)}
+                                            stroke={el.color ?? '#000000'}
+                                            strokeWidth={el.strokeWidth ?? 1}
                                             opacity={el.opacity}
                                         />
                                     );
                                 } else if (el.tool === 'arrow') {
                                     return (
                                         <Arrow
-                                            key={i}
-                                            points={el.points}
-                                            stroke={el.color}
-                                            strokeWidth={el.strokeWidth}
-                                            fill={el.color}
+                                            key={el.id ?? i}
+                                            points={el.points ?? []}
+                                            stroke={el.color ?? '#000000'}
+                                            strokeWidth={el.strokeWidth ?? 1}
+                                            fill={el.color ?? '#000000'}
                                             opacity={el.opacity}
                                         />
                                     );
                                 } else if (el.tool === 'line') {
                                     return (
                                         <Line
-                                            key={i}
-                                            points={el.points}
-                                            stroke={el.color}
-                                            strokeWidth={el.strokeWidth}
+                                            key={el.id ?? i}
+                                            points={el.points ?? []}
+                                            stroke={el.color ?? '#000000'}
+                                            strokeWidth={el.strokeWidth ?? 1}
                                             opacity={el.opacity}
                                             lineCap="round"
                                         />
@@ -613,10 +869,10 @@ export const ImageCanvas: React.FC = () => {
                                 } else if (el.tool === 'polyline') {
                                     return (
                                         <Line
-                                            key={i}
-                                            points={el.points}
-                                            stroke={el.color}
-                                            strokeWidth={el.strokeWidth}
+                                            key={el.id ?? i}
+                                            points={el.points ?? []}
+                                            stroke={el.color ?? '#000000'}
+                                            strokeWidth={el.strokeWidth ?? 1}
                                             opacity={el.opacity}
                                             lineCap="round"
                                             lineJoin="round"
@@ -625,10 +881,10 @@ export const ImageCanvas: React.FC = () => {
                                 } else if (el.tool === 'polygon') {
                                     return (
                                         <Line
-                                            key={i}
-                                            points={el.points}
-                                            stroke={el.color}
-                                            fill={el.color}
+                                            key={el.id ?? i}
+                                            points={el.points ?? []}
+                                            stroke={el.color ?? '#000000'}
+                                            fill={el.color ?? '#000000'}
                                             strokeWidth={2}
                                             opacity={el.opacity}
                                             closed={true}
@@ -636,44 +892,15 @@ export const ImageCanvas: React.FC = () => {
                                     );
                                 } else if (el.tool === 'text') {
                                     return (
-                                        <Text
-                                            key={i}
-                                            id={el.id}
-                                            x={el.x}
-                                            y={el.y}
-                                            text={el.text}
-                                            fontSize={el.size}
-                                            fill={el.color}
-                                            draggable={true}
-                                            onDblClick={() => handleTextDblClick(el.id, el.text)}
-                                            onClick={(e) => {
-                                                if (tool === 'text') {
-                                                    e.cancelBubble = true;
-                                                    handleTextDblClick(el.id, el.text);
-                                                }
-                                            }}
-                                            onTap={(e) => {
-                                                if (tool === 'text') {
-                                                    e.cancelBubble = true;
-                                                    handleTextDblClick(el.id, el.text);
-                                                }
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                const container = e.target.getStage()?.container();
-                                                if (container) container.style.cursor = 'move';
-                                                setIsHoveringElement(true);
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                const container = e.target.getStage()?.container();
-                                                if (container) container.style.cursor = tool === 'text' ? 'text' : 'default'; // Return to appropriate cursor
-                                                setIsHoveringElement(false);
-                                            }}
-                                            onDragEnd={(e) => {
-                                                const newElements = [...elements];
-                                                newElements[i] = { ...el, x: e.target.x(), y: e.target.y() };
-                                                setElements(newElements);
-                                                pushHistory({ elements: newElements });
-                                            }}
+                                        <TextElementComponent
+                                            key={el.id ?? i}
+                                            element={el}
+                                            isSelected={selectedId === el.id}
+                                            onSelect={selectShape}
+                                            onChange={updateElementById}
+                                            onEdit={openExistingTextEditor}
+                                            tool={tool}
+                                            setIsHoveringElement={setIsHoveringElement}
                                         />
                                     );
                                 }
@@ -773,6 +1000,18 @@ export const ImageCanvas: React.FC = () => {
                                     />
                                 </>
                             )}
+
+                            {!textEditor && draftTextBox && (
+                                <Rect
+                                    x={draftTextBox.x}
+                                    y={draftTextBox.y}
+                                    width={draftTextBox.width}
+                                    height={draftTextBox.height}
+                                    stroke="#2563eb"
+                                    strokeWidth={2}
+                                    dash={[6, 4]}
+                                />
+                            )}
                         </Layer>
                     </Stage>
 
@@ -851,13 +1090,34 @@ export const ImageCanvas: React.FC = () => {
                 </div>
             )}
 
-            <TextModal
-                isOpen={textModal.isOpen}
-                initialText={textModal.text}
-                title={textModal.id ? '编辑文本' : '添加文本'}
-                onConfirm={handleTextConfirm}
-                onClose={() => setTextModal({ ...textModal, isOpen: false })}
-            />
+            {textEditor && (
+                <textarea
+                    ref={textareaRef}
+                    value={textEditor.text}
+                    onChange={(e) => setTextEditor({ ...textEditor, text: e.target.value })}
+                    onBlur={() => commitTextEditor()}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                            e.preventDefault();
+                            commitTextEditor(false);
+                        }
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                            e.preventDefault();
+                            commitTextEditor();
+                        }
+                    }}
+                    placeholder="输入文字，Ctrl+Enter 完成"
+                    className="absolute z-[120] resize-none rounded-md border border-blue-400 bg-white/95 px-2 py-1 text-slate-700 shadow-xl outline-none focus:ring-2 focus:ring-blue-500/30"
+                    style={{
+                        left: textEditor.x * scale + position.x,
+                        top: textEditor.y * scale + position.y,
+                        width: textEditor.width * scale,
+                        height: textEditor.height * scale,
+                        fontSize: textEditor.fontSize * scale,
+                        lineHeight: 1.2,
+                    }}
+                />
+            )}
         </div>
     );
 };

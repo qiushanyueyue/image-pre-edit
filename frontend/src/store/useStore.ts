@@ -13,6 +13,30 @@ export interface OverlayImage {
     height: number;
 }
 
+export interface CanvasElement {
+    id?: string;
+    tool: 'brush' | 'eraser' | 'rectangle' | 'circle' | 'arrow' | 'text' | 'polyline' | 'polygon' | 'line';
+    points?: number[];
+    color?: string;
+    size?: number;
+    opacity?: number;
+    strokeWidth?: number;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    text?: string;
+    fill?: string;
+    closed?: boolean;
+    padding?: number;
+    draggable?: boolean;
+}
+
+interface HistorySnapshot {
+    elements: CanvasElement[];
+    imageUrl: string | null;
+}
+
 interface AppState {
     tool: ToolType;
     brushSize: number;
@@ -28,7 +52,7 @@ interface AppState {
     setJsonResult: (json: string) => void;
 
     // History management
-    history: any[];
+    history: HistorySnapshot[];
     historyIndex: number;
     maxHistorySize: number;
 
@@ -39,9 +63,9 @@ interface AppState {
     setBrushColor: (color: string) => void;
     setBrushOpacity: (opacity: number) => void;
     setImageUrl: (url: string | null) => void;
-    setElements: (elements: any[]) => void;
+    setElements: (elements: CanvasElement[]) => void;
     clearCanvas: () => void;
-    elements: any[];
+    elements: CanvasElement[];
 
     // Overlay management
     addOverlay: (overlay: Omit<OverlayImage, 'id'>) => void;
@@ -58,7 +82,7 @@ interface AppState {
     setCanvasAction: (action: 'NONE' | 'EXPORT_IMAGE') => void;
 
     // History management
-    pushHistory: (state: any) => void;
+    pushHistory: (state: Partial<HistorySnapshot>) => void;
     undo: () => void;
     redo: () => void;
     canUndo: () => boolean;
