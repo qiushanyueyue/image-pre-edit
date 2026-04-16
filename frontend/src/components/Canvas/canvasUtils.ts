@@ -31,6 +31,12 @@ export const isPointInsideImageBounds = (point: Point, bounds: RectShape): boole
   );
 };
 
+export const shouldBlockArrowStart = (nodeName: string | null | undefined): boolean =>
+  (nodeName ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .includes('overlay-image');
+
 export const getTextBoxLayout = ({ width, height }: Pick<RectShape, 'width' | 'height'>) => {
   const safeWidth = Math.max(MIN_TEXT_WIDTH, Math.abs(width));
   const safeHeight = Math.max(MIN_TEXT_HEIGHT, Math.abs(height));

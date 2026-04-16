@@ -1,10 +1,10 @@
-import { useRef, useState, useEffect, Fragment } from 'react';
+import { useRef, useState, useEffect, Fragment, useCallback } from 'react';
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Circle, Arrow, Text, Transformer } from 'react-konva';
 import useImage from 'use-image';
 import { useAppStore, type CanvasElement, type OverlayImage } from '../../store/useStore';
 import Konva from 'konva';
 import { clsx } from 'clsx';
-import { getTextBoxLayout, isPointInsideImageBounds, normalizeRect } from './canvasUtils';
+import { getTextBoxLayout, normalizeRect, shouldBlockArrowStart } from './canvasUtils';
 
 // Multi-Overlay Component with Individual Transformers
 interface OverlayImageComponentProps {
@@ -29,6 +29,7 @@ const OverlayImageComponent = ({ overlay, isSelected, onSelect, onChange }: Over
     return (
         <Fragment>
             <KonvaImage
+                name="overlay-image"
                 onClick={onSelect}
                 onTap={onSelect}
                 ref={shapeRef}
@@ -72,16 +73,10 @@ const OverlayImageComponent = ({ overlay, isSelected, onSelect, onChange }: Over
     );
 };
 
-const URLImage = ({ src, onLoad }: { src: string; onLoad: (bounds: { x: number; y: number; width: number; height: number }) => void }) => {
+const URLImage = ({ src }: { src: string }) => {
     const [image] = useImage(src);
 
-    useEffect(() => {
-        if (image) {
-            onLoad({ x: 0, y: 0, width: image.width, height: image.height });
-        }
-    }, [image, onLoad]);
-
-    return <KonvaImage image={image} />;
+    return <KonvaImage name="background-image" image={image} />;
 };
 
 interface TextElementComponentProps {
@@ -130,6 +125,7 @@ const TextElementComponent = ({
                 verticalAlign="middle"
                 wrap="word"
                 draggable
+                name="canvas-text-element"
                 onClick={(e) => {
                     if (tool === 'select' || tool === 'text') {
                         e.cancelBubble = true;
@@ -185,6 +181,12 @@ const TextElementComponent = ({
                 <Transformer
                     ref={transformerRef}
                     rotateEnabled={false}
+                    borderDash={[6, 4]}
+                    borderStroke="#3b82f6"
+                    anchorStroke="#3b82f6"
+                    anchorFill="#ffffff"
+                    anchorCornerRadius={999}
+                    anchorSize={8}
                     enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right']}
                     boundBoxFunc={(oldBox, newBox) => {
                         const layout = getTextBoxLayout({
@@ -232,7 +234,6 @@ export const ImageCanvas: React.FC = () => {
     const [cropBox, setCropBox] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
     const [isCropping, setIsCropping] = useState(false);
 
-    const [imageBounds, setImageBounds] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
     const textDragStartRef = useRef<{ x: number; y: number } | null>(null);
     const [draftTextBox, setDraftTextBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
     const [textEditor, setTextEditor] = useState<{
@@ -303,11 +304,11 @@ export const ImageCanvas: React.FC = () => {
         }
     };
 
-    const removeElementById = (id: string) => {
+    const removeElementById = useCallback((id: string) => {
         const newElements = elements.filter((element) => element.id !== id);
         setElements(newElements);
         pushHistory({ elements: newElements });
-    };
+    }, [elements, pushHistory, setElements]);
 
     const openTextEditor = (config: {
         id: string;
@@ -324,7 +325,7 @@ export const ImageCanvas: React.FC = () => {
         selectShape(config.id);
     };
 
-    const commitTextEditor = (shouldSave = true) => {
+    const commitTextEditor = useCallback((shouldSave = true) => {
         if (!textEditor) return;
 
         const trimmed = textEditor.text.trim();
@@ -361,7 +362,7 @@ export const ImageCanvas: React.FC = () => {
         setTextEditor(null);
         setDraftTextBox(null);
         textDragStartRef.current = null;
-    };
+    }, [elements, pushHistory, removeElementById, setElements, textEditor]);
 
     const openExistingTextEditor = (id: string) => {
         const textElement = elements.find((element) => element.id === id && element.tool === 'text');
@@ -471,7 +472,8 @@ export const ImageCanvas: React.FC = () => {
                 opacity: brushOpacity
             }]);
         } else if (tool === 'rectangle' || tool === 'circle' || tool === 'arrow') {
-            if (tool === 'arrow' && imageBounds && isPointInsideImageBounds(pos, imageBounds)) {
+            const targetName = typeof e.target.name === 'function' ? e.target.name() : '';
+            if (tool === 'arrow' && shouldBlockArrowStart(targetName)) {
                 isDrawing.current = false;
                 return;
             }
@@ -600,7 +602,6 @@ export const ImageCanvas: React.FC = () => {
         });
 
         setImageUrl(croppedDataUrl);
-        setImageBounds(null);
         setCropBox(null);
         setElements([]);
         pushHistory({ imageUrl: croppedDataUrl, elements: [] });
@@ -609,7 +610,6 @@ export const ImageCanvas: React.FC = () => {
     const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            setImageBounds(null);
             setImageUrl(URL.createObjectURL(file));
             pushHistory({ imageUrl: URL.createObjectURL(file) });
         }
@@ -651,14 +651,13 @@ export const ImageCanvas: React.FC = () => {
 
         const files = e.dataTransfer.files;
         if (files && files[0]) {
-            setImageBounds(null);
             setImageUrl(URL.createObjectURL(files[0]));
             pushHistory({ imageUrl: URL.createObjectURL(files[0]) });
         }
     };
 
     // Finalize polyline
-    const finalizePolyline = () => {
+    const finalizePolyline = useCallback(() => {
         if (polylinePoints.length >= 4) {
             setElements([...elements, {
                 tool: 'polyline',
@@ -670,10 +669,10 @@ export const ImageCanvas: React.FC = () => {
             pushHistory({ elements: [...elements] });
         }
         setPolylinePoints([]);
-    };
+    }, [brushColor, brushOpacity, brushSize, elements, polylinePoints, pushHistory, setElements]);
 
     // Finalize polygon (close and fill)
-    const finalizePolygon = () => {
+    const finalizePolygon = useCallback(() => {
         if (polygonPoints.length >= 6) { // At least 3 points
             setElements([...elements, {
                 tool: 'polygon',
@@ -686,7 +685,7 @@ export const ImageCanvas: React.FC = () => {
             pushHistory({ elements: [...elements] });
         }
         setPolygonPoints([]);
-    };
+    }, [brushColor, brushOpacity, elements, polygonPoints, pushHistory, setElements]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -712,10 +711,31 @@ export const ImageCanvas: React.FC = () => {
                 setDraftTextBox(null);
                 selectShape(null);
             }
+            if ((e.key === 'Delete' || e.key === 'Backspace') && !textEditor && selectedId) {
+                const activeTag = (document.activeElement?.tagName ?? '').toLowerCase();
+                if (activeTag === 'input' || activeTag === 'textarea') {
+                    return;
+                }
+
+                const selectedElement = elements.find((element) => element.id === selectedId);
+                if (selectedElement?.tool === 'text') {
+                    e.preventDefault();
+                    removeElementById(selectedId);
+                    selectShape(null);
+                    return;
+                }
+
+                const selectedOverlay = overlays.find((overlay) => overlay.id === selectedId);
+                if (selectedOverlay) {
+                    e.preventDefault();
+                    useAppStore.getState().removeOverlay(selectedId);
+                    selectShape(null);
+                }
+            }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [tool, polylinePoints, polygonPoints, brushColor, brushSize, brushOpacity, elements, textEditor, commitTextEditor, finalizePolyline, finalizePolygon]);
+    }, [tool, elements, overlays, textEditor, selectedId, commitTextEditor, finalizePolyline, finalizePolygon, removeElementById]);
 
     // Container sizing
     const containerRef = useRef<HTMLDivElement>(null);
@@ -779,7 +799,7 @@ export const ImageCanvas: React.FC = () => {
                     >
                         {/* Background Image Layer - Separate so Eraser doesn't affect it */}
                         <Layer>
-                            <URLImage src={imageUrl} onLoad={setImageBounds} />
+                            <URLImage src={imageUrl} />
                         </Layer>
 
                         {/* Drawings Layer - Eraser (destination-out) only clears this layer */}
@@ -1106,8 +1126,7 @@ export const ImageCanvas: React.FC = () => {
                             commitTextEditor();
                         }
                     }}
-                    placeholder="输入文字，Ctrl+Enter 完成"
-                    className="absolute z-[120] resize-none rounded-md border border-blue-400 bg-white/95 px-2 py-1 text-slate-700 shadow-xl outline-none focus:ring-2 focus:ring-blue-500/30"
+                    className="absolute z-[120] resize-none rounded-md border-2 border-dashed border-blue-500 bg-transparent px-2 py-1 shadow-none outline-none"
                     style={{
                         left: textEditor.x * scale + position.x,
                         top: textEditor.y * scale + position.y,
@@ -1115,6 +1134,11 @@ export const ImageCanvas: React.FC = () => {
                         height: textEditor.height * scale,
                         fontSize: textEditor.fontSize * scale,
                         lineHeight: 1.2,
+                        color: textEditor.color,
+                        caretColor: textEditor.color,
+                        backgroundColor: 'transparent',
+                        boxShadow: 'none',
+                        padding: `${Math.max(4, 8 * scale)}px`,
                     }}
                 />
             )}

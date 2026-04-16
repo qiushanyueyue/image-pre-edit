@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTextBoxLayout, isPointInsideImageBounds, normalizeRect } from '../canvasUtils';
+import { getTextBoxLayout, isPointInsideImageBounds, normalizeRect, shouldBlockArrowStart } from '../canvasUtils';
 
 describe('isPointInsideImageBounds', () => {
   it('returns true when the pointer is inside the image bounds', () => {
@@ -41,5 +41,18 @@ describe('getTextBoxLayout', () => {
       height: 96,
       fontSize: 48,
     });
+  });
+});
+
+describe('shouldBlockArrowStart', () => {
+  it('blocks arrow starts from overlay images only', () => {
+    expect(shouldBlockArrowStart('overlay-image')).toBe(true);
+    expect(shouldBlockArrowStart('overlay-image selected')).toBe(true);
+  });
+
+  it('allows arrow starts from the main canvas and background image', () => {
+    expect(shouldBlockArrowStart('background-image')).toBe(false);
+    expect(shouldBlockArrowStart('')).toBe(false);
+    expect(shouldBlockArrowStart(undefined)).toBe(false);
   });
 });
