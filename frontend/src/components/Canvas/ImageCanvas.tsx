@@ -213,7 +213,7 @@ const TextElementComponent = ({
 export const ImageCanvas: React.FC = () => {
     const {
         tool, brushSize, brushColor, brushOpacity, fontSize,
-        imageUrl, setImageUrl, overlays, updateOverlay, pushHistory,
+        imageUrl, setImageUrl, overlays, updateOverlay, removeOverlay, pushHistory,
         elements, setElements
     } = useAppStore();
 
@@ -258,9 +258,6 @@ export const ImageCanvas: React.FC = () => {
     // Copy success state
     const [copySuccess, setCopySuccess] = useState(false);
 
-    // Listen for TopMenu actions
-    const { canvasAction, setCanvasAction } = useAppStore();
-
     function handleDownload() {
         const uri = stageRef.current?.toDataURL();
         if (uri) {
@@ -272,13 +269,6 @@ export const ImageCanvas: React.FC = () => {
             document.body.removeChild(link);
         }
     }
-
-    useEffect(() => {
-        if (canvasAction === 'EXPORT_IMAGE') {
-            handleDownload();
-            setCanvasAction('NONE');
-        }
-    }, [canvasAction, setCanvasAction]);
 
     useEffect(() => {
         if (!textEditor || !textareaRef.current) return;
@@ -309,6 +299,40 @@ export const ImageCanvas: React.FC = () => {
         setElements(newElements);
         pushHistory({ elements: newElements });
     }, [elements, pushHistory, setElements]);
+
+    const deleteSelectedContent = useCallback(() => {
+        if (!selectedId) return;
+
+        const selectedElement = elements.find((element) => element.id === selectedId);
+        if (selectedElement) {
+            removeElementById(selectedId);
+            selectShape(null);
+            return;
+        }
+
+        const selectedOverlay = overlays.find((overlay) => overlay.id === selectedId);
+        if (selectedOverlay) {
+            removeOverlay(selectedId);
+            selectShape(null);
+        }
+    }, [elements, overlays, removeElementById, removeOverlay, selectedId]);
+
+    // Listen for TopMenu / LeftPanel actions
+    const { canvasAction, setCanvasAction } = useAppStore();
+    useEffect(() => {
+        if (canvasAction === 'EXPORT_IMAGE') {
+            handleDownload();
+            setCanvasAction('NONE');
+            return;
+        }
+        if (canvasAction === 'DELETE_SELECTED') {
+            const frameId = window.requestAnimationFrame(() => {
+                deleteSelectedContent();
+                setCanvasAction('NONE');
+            });
+            return () => window.cancelAnimationFrame(frameId);
+        }
+    }, [canvasAction, deleteSelectedContent, setCanvasAction]);
 
     const openTextEditor = (config: {
         id: string;
@@ -718,24 +742,22 @@ export const ImageCanvas: React.FC = () => {
                 }
 
                 const selectedElement = elements.find((element) => element.id === selectedId);
-                if (selectedElement?.tool === 'text') {
+                if (selectedElement) {
                     e.preventDefault();
-                    removeElementById(selectedId);
-                    selectShape(null);
+                    deleteSelectedContent();
                     return;
                 }
 
                 const selectedOverlay = overlays.find((overlay) => overlay.id === selectedId);
                 if (selectedOverlay) {
                     e.preventDefault();
-                    useAppStore.getState().removeOverlay(selectedId);
-                    selectShape(null);
+                    deleteSelectedContent();
                 }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [tool, elements, overlays, textEditor, selectedId, commitTextEditor, finalizePolyline, finalizePolygon, removeElementById]);
+    }, [tool, elements, overlays, textEditor, selectedId, commitTextEditor, finalizePolyline, finalizePolygon, deleteSelectedContent]);
 
     // Container sizing
     const containerRef = useRef<HTMLDivElement>(null);

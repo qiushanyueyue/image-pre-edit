@@ -78,8 +78,8 @@ interface AppState {
     updatePromptAt: (index: number, newPrompt: string) => void;
     removePrompt: (prompt: string) => void;
 
-    canvasAction: 'NONE' | 'EXPORT_IMAGE';
-    setCanvasAction: (action: 'NONE' | 'EXPORT_IMAGE') => void;
+    canvasAction: 'NONE' | 'EXPORT_IMAGE' | 'DELETE_SELECTED';
+    setCanvasAction: (action: 'NONE' | 'EXPORT_IMAGE' | 'DELETE_SELECTED') => void;
 
     // History management
     pushHistory: (state: Partial<HistorySnapshot>) => void;

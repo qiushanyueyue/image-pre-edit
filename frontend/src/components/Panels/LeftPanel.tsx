@@ -25,7 +25,7 @@ import { useState } from 'react';
 
 // Extracted ToolButton for stability and performance
 const ToolButton = ({ t, icon: Icon, label, onClick, isActive, disabled }: {
-    t: ToolType | 'crop' | 'undo' | 'redo' | 'clear',
+    t: ToolType | 'crop' | 'undo' | 'redo' | 'delete' | 'clear',
     icon: LucideIcon,
     label: string,
     onClick?: () => void,
@@ -44,7 +44,7 @@ const ToolButton = ({ t, icon: Icon, label, onClick, isActive, disabled }: {
                 disabled
                     ? "opacity-40 cursor-not-allowed"
                     : "",
-                t === 'clear' ? "text-red-500 hover:bg-red-50 hover:text-red-600" : ""
+                (t === 'clear' || t === 'delete') ? "text-red-500 hover:bg-red-50 hover:text-red-600" : ""
             )}
             title={label}
         >
@@ -71,6 +71,7 @@ export const LeftPanel = () => {
         canUndo,
         canRedo,
         clearCanvas,
+        setCanvasAction,
         prompts,
         addPrompt,
         removePrompt,
@@ -94,17 +95,20 @@ export const LeftPanel = () => {
         { t: 'line', icon: Minus, label: '直线' },
     ];
 
-    const historyTools: { t: 'undo' | 'redo' | 'clear', icon: LucideIcon, label: string }[] = [
+    const historyTools: { t: 'undo' | 'redo' | 'delete' | 'clear', icon: LucideIcon, label: string }[] = [
         { t: 'undo', icon: Undo2, label: '撤销' },
         { t: 'redo', icon: Redo2, label: '重做' },
-        { t: 'clear', icon: Trash2, label: '清空' },
+        { t: 'delete', icon: Trash2, label: '删除' },
+        { t: 'clear', icon: Eraser, label: '清空' },
     ];
 
-    const handleToolClick = (t: ToolType | 'crop' | 'undo' | 'redo' | 'clear') => {
+    const handleToolClick = (t: ToolType | 'crop' | 'undo' | 'redo' | 'delete' | 'clear') => {
         if (t === 'undo') {
             undo();
         } else if (t === 'redo') {
             redo();
+        } else if (t === 'delete') {
+            setCanvasAction('DELETE_SELECTED');
         } else if (t === 'clear') {
             if (window.confirm('确定要清空所有内容吗？（包括图片、标记、JSON）')) {
                 clearCanvas();
