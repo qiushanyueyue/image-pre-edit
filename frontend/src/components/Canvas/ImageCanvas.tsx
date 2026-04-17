@@ -258,6 +258,11 @@ export const ImageCanvas: React.FC = () => {
 
     // Copy success state
     const [copySuccess, setCopySuccess] = useState(false);
+    const activeTextEditorId = textEditor?.id ?? null;
+    const activeTextEditorText = textEditor?.text ?? '';
+    const activeTextEditorFontSize = textEditor?.fontSize ?? 0;
+    const activeTextEditorHeight = textEditor?.height ?? 0;
+    const activeTextEditorWidth = textEditor?.width ?? 0;
 
     const getShapeSelectionHandlers = useCallback((elementId?: string) => ({
         onClick: (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -295,11 +300,36 @@ export const ImageCanvas: React.FC = () => {
     }
 
     useEffect(() => {
-        if (!textEditor || !textareaRef.current) return;
+        if (!activeTextEditorId || !textareaRef.current) return;
 
         textareaRef.current.focus();
-        textareaRef.current.select();
-    }, [textEditor]);
+
+        const currentLength = textareaRef.current.value.length;
+        textareaRef.current.setSelectionRange(currentLength, currentLength);
+    }, [activeTextEditorId]);
+
+    useEffect(() => {
+        if (!activeTextEditorId || !textareaRef.current) return;
+
+        const textarea = textareaRef.current;
+        const minHeight = Math.max(36, activeTextEditorFontSize * 1.8);
+        const nextHeight = Math.max(minHeight, Math.ceil(textarea.scrollHeight / Math.max(scale, 0.1)));
+
+        if (Math.abs(nextHeight - activeTextEditorHeight) < 1) {
+            return;
+        }
+
+        setTextEditor((current) => {
+            if (!current || current.id !== activeTextEditorId) {
+                return current;
+            }
+
+            return {
+                ...current,
+                height: nextHeight,
+            };
+        });
+    }, [activeTextEditorFontSize, activeTextEditorHeight, activeTextEditorId, activeTextEditorText, activeTextEditorWidth, scale]);
 
     const checkDeselect = (e: Konva.KonvaEventObject<MouseEvent> | Konva.KonvaEventObject<TouchEvent>) => {
         const clickedOnEmpty = e.target === e.target.getStage();
@@ -418,6 +448,29 @@ export const ImageCanvas: React.FC = () => {
             isCommittingTextRef.current = false;
         }, 0);
     }, [elements, pushHistory, removeElementById, setElements, textEditor]);
+
+    useEffect(() => {
+        if (!textEditor) return;
+
+        const handlePointerDownOutside = (event: MouseEvent | TouchEvent) => {
+            const target = event.target as Node | null;
+            if (!target) return;
+
+            if (textareaRef.current?.contains(target)) {
+                return;
+            }
+
+            commitTextEditor();
+        };
+
+        document.addEventListener('mousedown', handlePointerDownOutside, true);
+        document.addEventListener('touchstart', handlePointerDownOutside, true);
+
+        return () => {
+            document.removeEventListener('mousedown', handlePointerDownOutside, true);
+            document.removeEventListener('touchstart', handlePointerDownOutside, true);
+        };
+    }, [commitTextEditor, textEditor]);
 
     const openExistingTextEditor = (id: string) => {
         const textElement = elements.find((element) => element.id === id && element.tool === 'text');
@@ -990,6 +1043,10 @@ export const ImageCanvas: React.FC = () => {
                                         />
                                     );
                                 } else if (el.tool === 'text') {
+                                    if (textEditor?.id === el.id) {
+                                        return null;
+                                    }
+
                                     return (
                                         <TextElementComponent
                                             key={el.id ?? i}
@@ -1128,6 +1185,23 @@ export const ImageCanvas: React.FC = () => {
                                     stroke="#2563eb"
                                     strokeWidth={2}
                                     dash={[6, 4]}
+                                />
+                            )}
+
+                            {textEditor && (
+                                <Text
+                                    x={textEditor.x}
+                                    y={textEditor.y}
+                                    width={textEditor.width}
+                                    height={textEditor.height}
+                                    padding={8}
+                                    text={textEditor.text || ' '}
+                                    fontSize={textEditor.fontSize}
+                                    fill={textEditor.color}
+                                    lineHeight={1.2}
+                                    verticalAlign="middle"
+                                    wrap="word"
+                                    listening={false}
                                 />
                             )}
                         </Layer>
