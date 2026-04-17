@@ -248,6 +248,7 @@ export const ImageCanvas: React.FC = () => {
         isNew: boolean;
     } | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const isCommittingTextRef = useRef(false);
 
     // Drag and drop upload
     const [isDragOver, setIsDragOver] = useState(false);
@@ -257,6 +258,29 @@ export const ImageCanvas: React.FC = () => {
 
     // Copy success state
     const [copySuccess, setCopySuccess] = useState(false);
+
+    const getShapeSelectionHandlers = useCallback((elementId?: string) => ({
+        onClick: (e: Konva.KonvaEventObject<MouseEvent>) => {
+            if (tool !== 'select' || !elementId) return;
+            e.cancelBubble = true;
+            selectShape(elementId);
+        },
+        onTap: (e: Konva.KonvaEventObject<TouchEvent>) => {
+            if (tool !== 'select' || !elementId) return;
+            e.cancelBubble = true;
+            selectShape(elementId);
+        },
+    }), [tool]);
+
+    const getShapeSelectionStyle = useCallback((elementId?: string) => {
+        const isSelected = Boolean(elementId) && selectedId === elementId;
+
+        return {
+            shadowColor: isSelected ? '#3b82f6' : undefined,
+            shadowBlur: isSelected ? 12 : 0,
+            shadowOpacity: isSelected ? 0.75 : 0,
+        };
+    }, [selectedId]);
 
     function handleDownload() {
         const uri = stageRef.current?.toDataURL();
@@ -350,7 +374,8 @@ export const ImageCanvas: React.FC = () => {
     };
 
     const commitTextEditor = useCallback((shouldSave = true) => {
-        if (!textEditor) return;
+        if (!textEditor || isCommittingTextRef.current) return;
+        isCommittingTextRef.current = true;
 
         const trimmed = textEditor.text.trim();
         if (!shouldSave || !trimmed) {
@@ -360,6 +385,9 @@ export const ImageCanvas: React.FC = () => {
             setTextEditor(null);
             setDraftTextBox(null);
             textDragStartRef.current = null;
+            window.setTimeout(() => {
+                isCommittingTextRef.current = false;
+            }, 0);
             return;
         }
 
@@ -386,6 +414,9 @@ export const ImageCanvas: React.FC = () => {
         setTextEditor(null);
         setDraftTextBox(null);
         textDragStartRef.current = null;
+        window.setTimeout(() => {
+            isCommittingTextRef.current = false;
+        }, 0);
     }, [elements, pushHistory, removeElementById, setElements, textEditor]);
 
     const openExistingTextEditor = (id: string) => {
@@ -432,6 +463,7 @@ export const ImageCanvas: React.FC = () => {
         console.log('Canvas handleMouseDown, tool:', tool);
         if (textEditor) {
             commitTextEditor();
+            return;
         }
         checkDeselect(e);
         if (tool === 'hand' || tool === 'select') return;
@@ -683,14 +715,17 @@ export const ImageCanvas: React.FC = () => {
     // Finalize polyline
     const finalizePolyline = useCallback(() => {
         if (polylinePoints.length >= 4) {
-            setElements([...elements, {
+            const polylineElement: CanvasElement = {
+                id: `polyline-${Date.now()}`,
                 tool: 'polyline',
                 points: polylinePoints,
                 color: brushColor,
                 strokeWidth: brushSize,
                 opacity: brushOpacity
-            }]);
-            pushHistory({ elements: [...elements] });
+            };
+            const newElements = [...elements, polylineElement];
+            setElements(newElements);
+            pushHistory({ elements: newElements });
         }
         setPolylinePoints([]);
     }, [brushColor, brushOpacity, brushSize, elements, polylinePoints, pushHistory, setElements]);
@@ -698,15 +733,18 @@ export const ImageCanvas: React.FC = () => {
     // Finalize polygon (close and fill)
     const finalizePolygon = useCallback(() => {
         if (polygonPoints.length >= 6) { // At least 3 points
-            setElements([...elements, {
+            const polygonElement: CanvasElement = {
+                id: `polygon-${Date.now()}`,
                 tool: 'polygon',
                 points: polygonPoints,
                 color: brushColor,
                 fill: brushColor,
                 opacity: brushOpacity,
                 closed: true
-            }]);
-            pushHistory({ elements: [...elements] });
+            };
+            const newElements = [...elements, polygonElement];
+            setElements(newElements);
+            pushHistory({ elements: newElements });
         }
         setPolygonPoints([]);
     }, [brushColor, brushOpacity, elements, polygonPoints, pushHistory, setElements]);
@@ -859,6 +897,9 @@ export const ImageCanvas: React.FC = () => {
                                             globalCompositeOperation={
                                                 el.tool === 'eraser' ? 'destination-out' : 'source-over'
                                             }
+                                            hitStrokeWidth={Math.max((el.size ?? 1) + 12, 18)}
+                                            {...getShapeSelectionHandlers(el.id)}
+                                            {...getShapeSelectionStyle(el.id)}
                                         />
                                     );
                                 } else if (el.tool === 'rectangle') {
@@ -872,6 +913,8 @@ export const ImageCanvas: React.FC = () => {
                                             stroke={el.color ?? '#000000'}
                                             strokeWidth={el.strokeWidth ?? 1}
                                             opacity={el.opacity}
+                                            {...getShapeSelectionHandlers(el.id)}
+                                            {...getShapeSelectionStyle(el.id)}
                                         />
                                     );
                                 } else if (el.tool === 'circle') {
@@ -884,6 +927,8 @@ export const ImageCanvas: React.FC = () => {
                                             stroke={el.color ?? '#000000'}
                                             strokeWidth={el.strokeWidth ?? 1}
                                             opacity={el.opacity}
+                                            {...getShapeSelectionHandlers(el.id)}
+                                            {...getShapeSelectionStyle(el.id)}
                                         />
                                     );
                                 } else if (el.tool === 'arrow') {
@@ -895,6 +940,9 @@ export const ImageCanvas: React.FC = () => {
                                             strokeWidth={el.strokeWidth ?? 1}
                                             fill={el.color ?? '#000000'}
                                             opacity={el.opacity}
+                                            hitStrokeWidth={Math.max((el.strokeWidth ?? 1) + 12, 18)}
+                                            {...getShapeSelectionHandlers(el.id)}
+                                            {...getShapeSelectionStyle(el.id)}
                                         />
                                     );
                                 } else if (el.tool === 'line') {
@@ -906,6 +954,9 @@ export const ImageCanvas: React.FC = () => {
                                             strokeWidth={el.strokeWidth ?? 1}
                                             opacity={el.opacity}
                                             lineCap="round"
+                                            hitStrokeWidth={Math.max((el.strokeWidth ?? 1) + 12, 18)}
+                                            {...getShapeSelectionHandlers(el.id)}
+                                            {...getShapeSelectionStyle(el.id)}
                                         />
                                     );
                                 } else if (el.tool === 'polyline') {
@@ -918,6 +969,9 @@ export const ImageCanvas: React.FC = () => {
                                             opacity={el.opacity}
                                             lineCap="round"
                                             lineJoin="round"
+                                            hitStrokeWidth={Math.max((el.strokeWidth ?? 1) + 12, 18)}
+                                            {...getShapeSelectionHandlers(el.id)}
+                                            {...getShapeSelectionStyle(el.id)}
                                         />
                                     );
                                 } else if (el.tool === 'polygon') {
@@ -930,6 +984,9 @@ export const ImageCanvas: React.FC = () => {
                                             strokeWidth={2}
                                             opacity={el.opacity}
                                             closed={true}
+                                            hitStrokeWidth={18}
+                                            {...getShapeSelectionHandlers(el.id)}
+                                            {...getShapeSelectionStyle(el.id)}
                                         />
                                     );
                                 } else if (el.tool === 'text') {
@@ -957,22 +1014,31 @@ export const ImageCanvas: React.FC = () => {
                                     <Line
                                         points={polylinePoints}
                                         stroke={brushColor}
-                                        strokeWidth={brushSize}
+                                        strokeWidth={Math.max(brushSize, 4)}
                                         opacity={1.0}
                                     />
                                     {/* Node highlights */}
                                     {polylinePoints.map((_, i) => {
                                         if (i % 2 === 0) {
                                             return (
-                                                <Circle
-                                                    key={`node-${i}`}
-                                                    x={polylinePoints[i]}
-                                                    y={polylinePoints[i + 1]}
-                                                    radius={5}
-                                                    fill="#3b82f6"
-                                                    stroke="#ffffff"
-                                                    strokeWidth={2}
-                                                />
+                                                <Fragment key={`node-${i}`}>
+                                                    <Circle
+                                                        x={polylinePoints[i]}
+                                                        y={polylinePoints[i + 1]}
+                                                        radius={9}
+                                                        fill="#3b82f6"
+                                                        opacity={0.2}
+                                                        listening={false}
+                                                    />
+                                                    <Circle
+                                                        x={polylinePoints[i]}
+                                                        y={polylinePoints[i + 1]}
+                                                        radius={6}
+                                                        fill="#3b82f6"
+                                                        stroke="#ffffff"
+                                                        strokeWidth={3}
+                                                    />
+                                                </Fragment>
                                             );
                                         }
                                         return null;
@@ -989,20 +1055,30 @@ export const ImageCanvas: React.FC = () => {
                                         fill={brushColor}
                                         opacity={0.3}
                                         closed={false}
-                                        dash={[5, 5]}
+                                        dash={[10, 6]}
+                                        strokeWidth={Math.max(brushSize, 4)}
                                     />
                                     {polygonPoints.map((_, i) => {
                                         if (i % 2 === 0) {
                                             return (
-                                                <Circle
-                                                    key={`poly-node-${i}`}
-                                                    x={polygonPoints[i]}
-                                                    y={polygonPoints[i + 1]}
-                                                    radius={5}
-                                                    fill="#10b981"
-                                                    stroke="#ffffff"
-                                                    strokeWidth={2}
-                                                />
+                                                <Fragment key={`poly-node-${i}`}>
+                                                    <Circle
+                                                        x={polygonPoints[i]}
+                                                        y={polygonPoints[i + 1]}
+                                                        radius={11}
+                                                        fill="#10b981"
+                                                        opacity={0.24}
+                                                        listening={false}
+                                                    />
+                                                    <Circle
+                                                        x={polygonPoints[i]}
+                                                        y={polygonPoints[i + 1]}
+                                                        radius={7}
+                                                        fill="#10b981"
+                                                        stroke="#ffffff"
+                                                        strokeWidth={3}
+                                                    />
+                                                </Fragment>
                                             );
                                         }
                                         return null;
@@ -1135,6 +1211,7 @@ export const ImageCanvas: React.FC = () => {
             {textEditor && (
                 <textarea
                     ref={textareaRef}
+                    spellCheck={false}
                     value={textEditor.text}
                     onChange={(e) => setTextEditor({ ...textEditor, text: e.target.value })}
                     onBlur={() => commitTextEditor()}
@@ -1160,6 +1237,11 @@ export const ImageCanvas: React.FC = () => {
                         caretColor: textEditor.color,
                         backgroundColor: 'transparent',
                         boxShadow: 'none',
+                        whiteSpace: 'pre-wrap',
+                        overflow: 'hidden',
+                        fontFamily: 'inherit',
+                        fontWeight: 500,
+                        WebkitTextFillColor: textEditor.color,
                         padding: `${Math.max(4, 8 * scale)}px`,
                     }}
                 />

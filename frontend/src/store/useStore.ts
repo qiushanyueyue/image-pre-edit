@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { getClearedEditingState } from './storeUtils';
 
 export type ToolType = 'select' | 'hand' | 'brush' | 'eraser' | 'rectangle' | 'circle' | 'arrow' | 'text' | 'polyline' | 'polygon' | 'line' | 'crop';
 type Theme = 'dark' | 'light';
@@ -132,15 +133,15 @@ export const useAppStore = create<AppState>()(
             canvasAction: 'NONE',
             setCanvasAction: (action) => set({ canvasAction: action }),
 
-            clearCanvas: () => set({
-                imageUrl: null,
-                elements: [],
-                overlays: [],
-                jsonResult: '', // Clear JSON
-                // Do NOT reset prompts as they are user collection
-                history: [],
-                historyIndex: -1
-            }),
+            clearCanvas: () => set((state) => ({
+                ...getClearedEditingState({
+                    imageUrl: state.imageUrl,
+                    overlays: state.overlays,
+                    jsonResult: state.jsonResult,
+                    history: state.history,
+                    historyIndex: state.historyIndex,
+                }),
+            })),
 
             addOverlay: (overlay) => set((state) => ({
                 overlays: [...state.overlays, { ...overlay, id: `overlay-${Date.now()}-${Math.random()}` }]
