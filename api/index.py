@@ -51,6 +51,7 @@ def health_check():
         "status": "ok", 
         "model": vision_client.model_name,
         "base_url": vision_client.base_url,
+        "vision_target": vision_client.get_target_diagnostics(),
         "deps": {
             "pil": True
         }

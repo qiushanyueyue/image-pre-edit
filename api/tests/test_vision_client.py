@@ -1,7 +1,14 @@
 import json
 import unittest
+from unittest.mock import patch
 
-from api.vision_client import clean_json_text, ensure_reverse_prompt_json, build_prompt_messages
+from api.vision_client import (
+    VisionModelClient,
+    build_prompt_messages,
+    clean_json_text,
+    ensure_reverse_prompt_json,
+    inspect_base_url_target,
+)
 
 
 class VisionClientTests(unittest.TestCase):
@@ -41,6 +48,42 @@ class VisionClientTests(unittest.TestCase):
         self.assertIn("改成下雨夜景，增加灯光氛围", messages["user"])
         self.assertIn("现代别墅", messages["user"])
         self.assertIn("推荐生成提示词", messages["user"])
+
+    @patch("api.vision_client.socket.getaddrinfo")
+    def test_inspect_base_url_target_marks_benchmark_ip_as_non_public(self, mock_getaddrinfo):
+        mock_getaddrinfo.return_value = [
+            (2, 1, 6, "", ("198.18.21.120", 12524)),
+        ]
+
+        diagnostics = inspect_base_url_target("http://yytianjin.yyboxdns.com:12524")
+
+        self.assertEqual(diagnostics["hostname"], "yytianjin.yyboxdns.com")
+        self.assertEqual(diagnostics["resolved_ips"], ["198.18.21.120"])
+        self.assertFalse(diagnostics["has_public_ip"])
+        self.assertIn("非公网", diagnostics["warning"])
+
+    @patch("api.vision_client.socket.getaddrinfo")
+    def test_generate_appends_network_hint_when_target_is_not_public(self, mock_getaddrinfo):
+        mock_getaddrinfo.return_value = [
+            (2, 1, 6, "", ("198.18.21.120", 12524)),
+        ]
+
+        client = VisionModelClient(base_url="http://yytianjin.yyboxdns.com:12524", model_name="gemma4:e4b", timeout=1)
+
+        def fail_ollama(*_args, **_kwargs):
+            raise ValueError("ollama failed")
+
+        def fail_openai(*_args, **_kwargs):
+            raise ValueError("openai failed")
+
+        with patch.object(client, "_generate_via_ollama", side_effect=fail_ollama), \
+             patch.object(client, "_generate_via_openai_compatible", side_effect=fail_openai):
+            with self.assertRaises(RuntimeError) as ctx:
+                client.generate("测试", b"fake-image")
+
+        self.assertIn("ollama failed", str(ctx.exception))
+        self.assertIn("198.18.21.120", str(ctx.exception))
+        self.assertIn("非公网", str(ctx.exception))
 
 
 if __name__ == "__main__":

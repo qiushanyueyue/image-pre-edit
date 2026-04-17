@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 import re
+import socket
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -191,11 +194,49 @@ def clean_text_response(raw_text: str) -> str:
     return text.strip()
 
 
+def inspect_base_url_target(base_url: str) -> dict[str, Any]:
+    parsed = urlparse(base_url)
+    hostname = parsed.hostname or ""
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+    diagnostics: dict[str, Any] = {
+        "base_url": base_url,
+        "hostname": hostname,
+        "port": port,
+        "resolved_ips": [],
+        "has_public_ip": False,
+        "warning": "",
+    }
+
+    if not hostname:
+        diagnostics["warning"] = "未能从视觉分析地址中解析出主机名。"
+        return diagnostics
+
+    try:
+        infos = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
+        resolved_ips = sorted({info[4][0] for info in infos if info[4]})
+    except OSError as exc:
+        diagnostics["warning"] = f"域名解析失败：{exc}"
+        return diagnostics
+
+    diagnostics["resolved_ips"] = resolved_ips
+    diagnostics["has_public_ip"] = any(ipaddress.ip_address(ip).is_global for ip in resolved_ips)
+
+    if resolved_ips and not diagnostics["has_public_ip"]:
+        diagnostics["warning"] = (
+            f"目标地址解析到非公网 IP：{', '.join(resolved_ips)}。"
+            "这类保留/内网地址通常无法被 Vercel 公网函数访问。"
+        )
+
+    return diagnostics
+
+
 @dataclass
 class VisionModelClient:
     base_url: str = DEFAULT_BASE_URL
     model_name: str = DEFAULT_MODEL_NAME
     timeout: int = 90
+    connect_timeout: int = 10
 
     @classmethod
     def from_env(cls) -> "VisionModelClient":
@@ -203,20 +244,30 @@ class VisionModelClient:
             base_url=os.getenv("VISION_API_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
             model_name=os.getenv("VISION_MODEL_NAME", DEFAULT_MODEL_NAME),
             timeout=int(os.getenv("VISION_API_TIMEOUT", "90")),
+            connect_timeout=int(os.getenv("VISION_API_CONNECT_TIMEOUT", "10")),
         )
+
+    def get_target_diagnostics(self) -> dict[str, Any]:
+        return inspect_base_url_target(self.base_url)
 
     def generate(self, prompt: str, image_bytes: bytes | None = None) -> str:
         errors: list[str] = []
         for transport in (self._generate_via_ollama, self._generate_via_openai_compatible):
+            transport_name = getattr(transport, "__name__", transport.__class__.__name__)
             try:
                 return transport(prompt, image_bytes)
             except requests.HTTPError as exc:
                 status_code = exc.response.status_code if exc.response is not None else "unknown"
                 if status_code not in (400, 404, 405):
                     raise
-                errors.append(f"{transport.__name__}:{status_code}")
+                errors.append(f"{transport_name}:{status_code}")
             except (KeyError, ValueError, requests.RequestException) as exc:
-                errors.append(f"{transport.__name__}:{exc}")
+                errors.append(f"{transport_name}:{exc}")
+
+        diagnostics = self.get_target_diagnostics()
+        if diagnostics.get("warning"):
+            errors.append(f"网络诊断:{diagnostics['warning']}")
+
         raise RuntimeError(f"无法从视觉分析服务获取结果：{' | '.join(errors)}")
 
     def _generate_via_ollama(self, prompt: str, image_bytes: bytes | None = None) -> str:
@@ -231,7 +282,7 @@ class VisionModelClient:
         response = requests.post(
             f"{self.base_url}/api/generate",
             json=payload,
-            timeout=self.timeout,
+            timeout=(self.connect_timeout, self.timeout),
         )
         response.raise_for_status()
         data = response.json()
@@ -261,7 +312,7 @@ class VisionModelClient:
         response = requests.post(
             f"{self.base_url}/v1/chat/completions",
             json=payload,
-            timeout=self.timeout,
+            timeout=(self.connect_timeout, self.timeout),
         )
         response.raise_for_status()
         data = response.json()
