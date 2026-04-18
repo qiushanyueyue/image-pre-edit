@@ -292,6 +292,7 @@ export const ImageCanvas: React.FC = () => {
         if (!stage) return null;
 
         const backgroundNode = stage.findOne('.background-image') as Konva.Image | null;
+        const backgroundSource = backgroundNode?.image() as HTMLImageElement | undefined;
         const exportBounds = getExportBounds({
             stageBounds: {
                 width: stage.width(),
@@ -301,8 +302,8 @@ export const ImageCanvas: React.FC = () => {
                 ? {
                     x: backgroundNode.x(),
                     y: backgroundNode.y(),
-                    width: backgroundNode.width(),
-                    height: backgroundNode.height(),
+                    width: backgroundSource?.naturalWidth ?? backgroundSource?.width ?? backgroundNode.width(),
+                    height: backgroundSource?.naturalHeight ?? backgroundSource?.height ?? backgroundNode.height(),
                 }
                 : null,
         });
@@ -312,17 +313,17 @@ export const ImageCanvas: React.FC = () => {
 
         stage.scale({ x: 1, y: 1 });
         stage.position({ x: 0, y: 0 });
-        stage.batchDraw();
+        stage.draw();
 
         try {
             return stage.toDataURL({
                 ...exportBounds,
-                pixelRatio: 2,
+                pixelRatio: 1,
             });
         } finally {
             stage.scale(originalScale);
             stage.position(originalPosition);
-            stage.batchDraw();
+            stage.draw();
         }
     }, []);
 
