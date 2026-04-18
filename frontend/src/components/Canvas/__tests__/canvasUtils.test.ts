@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTextBoxLayout, isPointInsideImageBounds, normalizeRect, shouldBlockArrowStart } from '../canvasUtils';
+import { getExportBounds, getTextBoxLayout, isPointInsideImageBounds, normalizeRect, shouldBlockArrowStart } from '../canvasUtils';
 
 describe('isPointInsideImageBounds', () => {
   it('returns true when the pointer is inside the image bounds', () => {
@@ -54,5 +54,35 @@ describe('shouldBlockArrowStart', () => {
     expect(shouldBlockArrowStart('background-image')).toBe(false);
     expect(shouldBlockArrowStart('')).toBe(false);
     expect(shouldBlockArrowStart(undefined)).toBe(false);
+  });
+});
+
+describe('getExportBounds', () => {
+  it('uses the background image bounds so exported images do not include white canvas margins', () => {
+    expect(
+      getExportBounds({
+        stageBounds: { width: 1200, height: 900 },
+        backgroundBounds: { x: 40, y: 80, width: 640, height: 480 },
+      }),
+    ).toEqual({
+      x: 40,
+      y: 80,
+      width: 640,
+      height: 480,
+    });
+  });
+
+  it('falls back to the full stage when no background image bounds are available', () => {
+    expect(
+      getExportBounds({
+        stageBounds: { width: 1200, height: 900 },
+        backgroundBounds: null,
+      }),
+    ).toEqual({
+      x: 0,
+      y: 0,
+      width: 1200,
+      height: 900,
+    });
   });
 });

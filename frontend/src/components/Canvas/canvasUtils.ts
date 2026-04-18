@@ -10,6 +10,11 @@ export interface RectShape {
   height: number;
 }
 
+interface ExportBoundsInput {
+  stageBounds: Pick<RectShape, 'width' | 'height'>;
+  backgroundBounds: RectShape | null;
+}
+
 const MIN_TEXT_WIDTH = 80;
 const MIN_TEXT_HEIGHT = 36;
 const MIN_TEXT_FONT_SIZE = 18;
@@ -46,5 +51,18 @@ export const getTextBoxLayout = ({ width, height }: Pick<RectShape, 'width' | 'h
     width: safeWidth,
     height: safeHeight,
     fontSize,
+  };
+};
+
+export const getExportBounds = ({ stageBounds, backgroundBounds }: ExportBoundsInput): RectShape => {
+  if (backgroundBounds) {
+    return normalizeRect(backgroundBounds);
+  }
+
+  return {
+    x: 0,
+    y: 0,
+    width: Math.max(0, stageBounds.width),
+    height: Math.max(0, stageBounds.height),
   };
 };

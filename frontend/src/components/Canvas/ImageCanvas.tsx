@@ -4,7 +4,7 @@ import useImage from 'use-image';
 import { useAppStore, type CanvasElement, type OverlayImage } from '../../store/useStore';
 import Konva from 'konva';
 import { clsx } from 'clsx';
-import { getTextBoxLayout, normalizeRect, shouldBlockArrowStart } from './canvasUtils';
+import { getExportBounds, getTextBoxLayout, normalizeRect, shouldBlockArrowStart } from './canvasUtils';
 
 // Multi-Overlay Component with Individual Transformers
 interface OverlayImageComponentProps {
@@ -287,8 +287,47 @@ export const ImageCanvas: React.FC = () => {
         };
     }, [selectedId]);
 
-    function handleDownload() {
-        const uri = stageRef.current?.toDataURL();
+    const getExportDataUrl = useCallback(() => {
+        const stage = stageRef.current;
+        if (!stage) return null;
+
+        const backgroundNode = stage.findOne('.background-image') as Konva.Image | null;
+        const exportBounds = getExportBounds({
+            stageBounds: {
+                width: stage.width(),
+                height: stage.height(),
+            },
+            backgroundBounds: backgroundNode
+                ? {
+                    x: backgroundNode.x(),
+                    y: backgroundNode.y(),
+                    width: backgroundNode.width(),
+                    height: backgroundNode.height(),
+                }
+                : null,
+        });
+
+        const originalScale = { x: stage.scaleX(), y: stage.scaleY() };
+        const originalPosition = { x: stage.x(), y: stage.y() };
+
+        stage.scale({ x: 1, y: 1 });
+        stage.position({ x: 0, y: 0 });
+        stage.batchDraw();
+
+        try {
+            return stage.toDataURL({
+                ...exportBounds,
+                pixelRatio: 2,
+            });
+        } finally {
+            stage.scale(originalScale);
+            stage.position(originalPosition);
+            stage.batchDraw();
+        }
+    }, []);
+
+    const handleDownload = useCallback(() => {
+        const uri = getExportDataUrl();
         if (uri) {
             const link = document.createElement('a');
             link.download = 'edited-image.png';
@@ -297,7 +336,7 @@ export const ImageCanvas: React.FC = () => {
             link.click();
             document.body.removeChild(link);
         }
-    }
+    }, [getExportDataUrl]);
 
     useEffect(() => {
         if (!activeTextEditorId || !textareaRef.current) return;
@@ -386,7 +425,7 @@ export const ImageCanvas: React.FC = () => {
             });
             return () => window.cancelAnimationFrame(frameId);
         }
-    }, [canvasAction, deleteSelectedContent, setCanvasAction]);
+    }, [canvasAction, deleteSelectedContent, handleDownload, setCanvasAction]);
 
     const openTextEditor = (config: {
         id: string;
@@ -725,7 +764,7 @@ export const ImageCanvas: React.FC = () => {
     };
 
     const handleCopyImage = async () => {
-        const uri = stageRef.current?.toDataURL();
+        const uri = getExportDataUrl();
         if (uri) {
             try {
                 const blob = await (await fetch(uri)).blob();
