@@ -1188,22 +1188,6 @@ export const ImageCanvas: React.FC = () => {
                                 />
                             )}
 
-                            {textEditor && (
-                                <Text
-                                    x={textEditor.x}
-                                    y={textEditor.y}
-                                    width={textEditor.width}
-                                    height={textEditor.height}
-                                    padding={8}
-                                    text={textEditor.text || ' '}
-                                    fontSize={textEditor.fontSize}
-                                    fill={textEditor.color}
-                                    lineHeight={1.2}
-                                    verticalAlign="middle"
-                                    wrap="word"
-                                    listening={false}
-                                />
-                            )}
                         </Layer>
                     </Stage>
 

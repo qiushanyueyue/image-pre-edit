@@ -133,14 +133,8 @@ export const useAppStore = create<AppState>()(
             canvasAction: 'NONE',
             setCanvasAction: (action) => set({ canvasAction: action }),
 
-            clearCanvas: () => set((state) => ({
-                ...getClearedEditingState({
-                    imageUrl: state.imageUrl,
-                    overlays: state.overlays,
-                    jsonResult: state.jsonResult,
-                    history: state.history,
-                    historyIndex: state.historyIndex,
-                }),
+            clearCanvas: () => set(() => ({
+                ...getClearedEditingState(),
             })),
 
             addOverlay: (overlay) => set((state) => ({

@@ -110,7 +110,7 @@ export const LeftPanel = () => {
         } else if (t === 'delete') {
             setCanvasAction('DELETE_SELECTED');
         } else if (t === 'clear') {
-            if (window.confirm('确定要清空当前标注吗？参考图和分析结果会保留。')) {
+            if (window.confirm('确定要清空所有内容吗？包括原图、参考图、标记和分析结果。')) {
                 clearCanvas();
             }
         } else {

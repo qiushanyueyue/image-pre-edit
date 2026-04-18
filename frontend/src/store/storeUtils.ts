@@ -5,18 +5,10 @@ interface HistorySnapshot {
     imageUrl: string | null;
 }
 
-export interface ClearCanvasStateInput {
-    imageUrl: string | null;
-    overlays: OverlayImage[];
-    jsonResult: string;
-    history: HistorySnapshot[];
-    historyIndex: number;
-}
-
-export const getClearedEditingState = (state: ClearCanvasStateInput) => ({
-    imageUrl: state.imageUrl,
-    overlays: state.overlays,
-    jsonResult: state.jsonResult,
+export const getClearedEditingState = () => ({
+    imageUrl: null,
+    overlays: [] as OverlayImage[],
+    jsonResult: '',
     elements: [] as CanvasElement[],
     history: [] as HistorySnapshot[],
     historyIndex: -1,
